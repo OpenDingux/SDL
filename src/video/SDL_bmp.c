@@ -223,7 +223,6 @@ SDL_Surface * SDL_LoadBMP_RW (SDL_RWops *src, int freesrc)
 			}
 			break;
 		case 2:
-		case 3:
 		case 5:
 		case 6:
 		case 7:
