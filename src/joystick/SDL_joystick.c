@@ -438,6 +438,11 @@ int SDL_PrivateJoystickAxis(SDL_Joystick *joystick, Uint8 axis, Sint16 value)
 		return 0;
 	}
 
+	/* Don't update if we're in the dead zone */
+	if ( value == 0 && joystick->axes[axis] == 0 ) {
+		return 0;
+	}
+
 	/* Update internal joystick state */
 	joystick->axes[axis] = value;
 
