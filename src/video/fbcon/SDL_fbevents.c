@@ -250,6 +250,9 @@ int FB_OpenKeyboard(_THIS)
 		static const char * const vcs[] = { "/dev/vc/%d", "/dev/tty%d", NULL };
 		int i, tty0_fd;
 
+		/* Set as session leader if it's not yet the case */
+		setsid();
+
 		/* Try to query for a free virtual terminal */
 		tty0_fd = -1;
 		for ( i=0; tty0[i] && (tty0_fd < 0); ++i ) {
