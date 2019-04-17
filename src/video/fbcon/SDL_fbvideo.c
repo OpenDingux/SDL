@@ -1461,10 +1461,6 @@ static void FB_UnlockHWSurface(_THIS, SDL_Surface *surface)
 
 static void FB_WaitVBL(_THIS)
 {
-#ifdef FBIOWAITRETRACE /* Heheh, this didn't make it into the main kernel */
-	ioctl(console_fd, FBIOWAITRETRACE, 0);
-#endif
-	return;
 }
 
 static void FB_WaitIdle(_THIS)
@@ -1494,8 +1490,6 @@ static int FB_TripleBufferingThread(void *d)
 
 		/* flip display */
 		cache_vinfo.yoffset = current_page * cache_vinfo.yres;
-
-		wait_vbl(this);
 
 		if ( ioctl(console_fd, FBIOPAN_DISPLAY, &cache_vinfo) < 0 ) {
 			SDL_SetError("ioctl(FBIOPAN_DISPLAY) failed");
@@ -1563,8 +1557,6 @@ static int FB_FlipHWSurface(_THIS, SDL_Surface *surface)
 	} else {
 		/* Wait for vertical retrace and then flip display */
 		cache_vinfo.yoffset = flip_page * cache_vinfo.yres;
-
-		wait_vbl(this);
 
 		if ( ioctl(console_fd, FBIOPAN_DISPLAY, &cache_vinfo) < 0 ) {
 			SDL_SetError("ioctl(FBIOPAN_DISPLAY) failed");
