@@ -138,6 +138,7 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 
 		if ( !get_property(this, plane->plane_id, "type", &p_type) ) {
 			SDL_SetError("Unable to query plane %d type.\n", plane->plane_id);
+			drmModeFreePlane(plane);
 			goto vidinit_fail_res;
 		}
 
@@ -175,9 +176,7 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 			if (conn) drmModeFreeConnector(conn);
 		}
 
-		if (plane) {
-			drmModeFreePlane(plane);
-		}
+		drmModeFreePlane(plane);
 	}
 
 	// Setup attempt finished, free resources
@@ -265,64 +264,70 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		.handle = req_create.handle
 	};
 
+	// Save all the modeset request structures
 	memcpy(&drm_req_destroy_dumb, &req_ddumb, sizeof(req_ddumb));
 	memcpy(&drm_req_create, &req_create, sizeof(req_create));
 	memcpy(&drm_req_map, &req_map, sizeof(req_map));
-	drmModeAtomicReq *req = drmModeAtomicAlloc();
 
 	#define attempt_add_prop(t, re, id, name, opt, val) \
 		if (!add_property(t, re, id, name, opt, val)) { \
-			goto setvidmode_fail_munmap; \
+			goto setvidmode_fail_req; \
 		}
 	
 	drm_pipe *pipe;
+	drmModeCrtc *pipe_crtc;
+	Uint32 blob_id = -1;
+	drmModeAtomicReq *req;
 	for (pipe = drm_first_pipe; pipe; pipe = pipe->next) {
 		printf("Attempting plane: %d crtc %d\n", pipe->plane, pipe->crtc);
-		if (drm_prev_crtc) {
-			drmModeFreeCrtc(drm_prev_crtc);
-			drm_prev_crtc = NULL;
-		}
 
-		drm_prev_crtc = drmModeGetCrtc(drm_fd, pipe->crtc);
+		pipe_crtc = drmModeGetCrtc(drm_fd, pipe->crtc);
 		if ( !drm_prev_crtc ) {
 			continue;
 		}
 
-		Uint32 blob_id;
-		drmModeCreatePropertyBlob(drm_fd, &drm_prev_crtc->mode, sizeof(drm_prev_crtc->mode), &blob_id);
+		// Copy CRTC mode
+		drmModeCreatePropertyBlob(drm_fd, &pipe_crtc->mode, sizeof(pipe_crtc->mode), &blob_id);
 
+		// Start a new atomic modeset request
+		req = drmModeAtomicAlloc();
+
+		// Setup crtc->connector pipe
 		attempt_add_prop(this, req, pipe->connector, "CRTC_ID", 0, pipe->crtc);
 		attempt_add_prop(this, req, pipe->crtc, "MODE_ID", 0, blob_id);
 		attempt_add_prop(this, req, pipe->crtc, "ACTIVE", 0, 1);
 
+		// Setup plane->crtc pipe
 		attempt_add_prop(this, req, pipe->plane, "FB_ID", 0, drm_fb);
 		attempt_add_prop(this, req, pipe->plane, "CRTC_ID", 0, pipe->crtc);
 
+		// Setup plane details
 		attempt_add_prop(this, req, pipe->plane, "SRC_X", 0, 0);
 		attempt_add_prop(this, req, pipe->plane, "SRC_Y", 0, 0);
 		attempt_add_prop(this, req, pipe->plane, "SRC_W", 0, width << 16);
 		attempt_add_prop(this, req, pipe->plane, "SRC_H", 0, height << 16);
 		attempt_add_prop(this, req, pipe->plane, "CRTC_X", 0, 0);
 		attempt_add_prop(this, req, pipe->plane, "CRTC_Y", 0, 0);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_W", 0, width);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_H", 0, height);
+		attempt_add_prop(this, req, pipe->plane, "CRTC_W", 0, pipe_crtc->width);
+		attempt_add_prop(this, req, pipe->plane, "CRTC_H", 0, pipe_crtc->height);
 
-		if (drmModeAtomicCommit(drm_fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL)) {
-			// Freshen up
-			drmModeAtomicFree(req);
-			req = drmModeAtomicAlloc();
-
-			// Destroy previous crtc mode
-			drmModeDestroyPropertyBlob(drm_fd, blob_id);
-			printf("Failed to modeset plane, %s\n", strerror(errno));
-		} else {
-			printf("Modeset worked!\n");
+		// Modeset successful, remember necessary data
+		if ( !drmModeAtomicCommit(drm_fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL) ) {
+			drm_prev_crtc = pipe_crtc;
+			drm_active_pipe = pipe;
 			break;
 		}
+
+		// Modeset failed, clean up request and related objects
+		drmModeAtomicFree(req);
+		drmModeFreeCrtc(pipe_crtc);
+		drmModeDestroyPropertyBlob(drm_fd, blob_id);
+		blob_id = -1;
 	}
 
-	if ( !pipe ) {
-		SDL_SetError("Unable to set any video mode\n");
+	// If we've got no active pipe, then modeset failed. Bail out.
+	if ( !drm_active_pipe ) {
+		SDL_SetError("Unable to set video mode.\n");
 		goto setvidmode_fail_munmap;
 	}
 
@@ -335,7 +340,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	if ( ! SDL_ReallocFormat(current, req_create.bpp, MASK(rbits) << 24,
 					MASK(gbits) << 16, MASK(bbits) << 8, 0) ) {
 			SDL_SetError("Unable to recreate surface format structure!\n");
-			goto setvidmode_fail_munmap;
+			goto setvidmode_fail_realloc;
 	}
 
 	current->w = req_create.width;
@@ -348,11 +353,18 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	SDL_Unlock_EventThread();
 	return current;
 
+setvidmode_fail_req:
+	drmModeAtomicFree(req);
+	drmModeDestroyPropertyBlob(drm_fd, blob_id);
+setvidmode_fail_realloc:
+	drmModeFreeCrtc(pipe_crtc);
 setvidmode_fail_munmap:
 	munmap(drm_map, req_create.size);
 setvidmode_fail_ddumb:
 	drmIoctl(drm_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &req_destroy);
 setvidmode_fail:
+
+	SDL_Unlock_EventThread();
 	return NULL;
 }
 
