@@ -1387,6 +1387,37 @@ AC_HELP_STRING([--enable-video-fbcon], [use framebuffer console video driver [[d
     fi
 }
 
+dnl Find the KMSDRM libraries
+CheckKMSDRM()
+{
+    AC_ARG_ENABLE(video-kmsdrm,
+AC_HELP_STRING([--enable-video-kmsdrm], [use kmsdrm video driver [[default=yes]]]),
+                  , enable_video-kmsdrm=yes)
+    if test x$enable_video = xyes -a x$enable_video_kmsdrm = xyes; then
+        video_kmsdrm=no
+
+        LIBDRM_REQUIRED_VERSION=2.4.46
+        AC_MSG_CHECKING(for kms/drm support)
+        AC_PATH_PROG(PKG_CONFIG, pkg-config, no)
+        if test x$PKG_CONFIG != xno; then
+            if $PKG_CONFIG --atleast-version $LIBDRM_REQUIRED_VERSION libdrm; then
+                LIBDRM_CFLAGS=`$PKG_CONFIG --cflags libdrm`
+                LIBDRM_LIBS=`$PKG_CONFIG --libs libdrm`
+                video_kmsdrm=yes
+            fi
+        fi
+
+        AC_MSG_RESULT($video_kmsdrm)
+        if test x$video_kmsdrm = xyes; then
+            AC_DEFINE(SDL_VIDEO_DRIVER_KMSDRM)
+            SOURCES="$SOURCES $srcdir/src/video/kmsdrm/*.c"
+            EXTRA_CFLAGS="$EXTRA_CFLAGS $LIBDRM_CFLAGS"
+            EXTRA_LDFLAGS="$EXTRA_LDFLAGS $LIBDRM_LIBS"
+            have_video=yes
+        fi
+    fi
+}
+
 dnl Find DirectFB
 CheckDirectFB()
 {
@@ -2524,6 +2555,7 @@ case "$host" in
         CheckX11
         CheckNANOX
         CheckFBCON
+        CheckKMSDRM
         CheckDirectFB
         CheckPS2GS
         CheckPS3
