@@ -29,7 +29,6 @@
 #include <fcntl.h>
 #include <libdrm/drm.h>
 #include <libdrm/drm_fourcc.h>
-#include <gbm.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
