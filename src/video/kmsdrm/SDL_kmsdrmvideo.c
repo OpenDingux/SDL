@@ -407,7 +407,14 @@ void KMSDRM_VideoQuit(_THIS)
 {
 	if (this->screen->pixels != NULL)
 	{
-		/** TODO:: Free DRM resources and restore previous CRTC **/
+		while (free_drm_prop_storage(this));
+		while (free_drm_pipe(this));
+		/** 
+		 * TODO:: Maybe a test application to see how this behaves and if we need
+		 * to really use this to undo the modeset, and how to.
+		 **/
+		if (drm_prev_crtc) drmModeFreeCrtc(drm_prev_crtc);
+		drm_prev_crtc = NULL;
 		this->screen->pixels = NULL;
 	}
 }

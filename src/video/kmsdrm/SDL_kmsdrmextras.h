@@ -291,8 +291,10 @@ static int free_drm_prop_storage(_THIS)
 		free(drm_first_prop_store->props_info[i]);
 	}
 
+
 	drmModeFreeObjectProperties(drm_first_prop_store->props);
 	drm_prop_storage *next = drm_first_prop_store->next;
+	free(drm_first_prop_store->props_info);
 	free(drm_first_prop_store);
 	drm_first_prop_store = next;
 
