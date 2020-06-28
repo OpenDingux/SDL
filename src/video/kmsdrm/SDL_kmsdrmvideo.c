@@ -275,7 +275,31 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 			goto setvidmode_fail_req; \
 		}
 	
+	// Gets checked by setvidmode_fail_req cleanup routine, don't reorder.
 	Uint32 blob_id = -1;
+
+	/** 
+	 * TODO:: Figure out if we _have_ to perform this, and if so, whether there's
+	 * any cleaning up to do after this is over and done with.
+	 **/
+	// Disable pipes
+	for (drm_pipe *pipe = drm_first_pipe; pipe; pipe = pipe->next) {
+		drmModeAtomicReq *req = drmModeAtomicAlloc();
+
+		// Disconnect crtc->connector pipe, unset crtc mode and disable crtc.
+		attempt_add_prop(this, req, pipe->connector, "CRTC_ID", 0, 0);
+		attempt_add_prop(this, req, pipe->crtc, "MODE_ID", 0, 0);
+		attempt_add_prop(this, req, pipe->crtc, "ACTIVE", 0, 0);
+
+		int rc = drmModeAtomicCommit(drm_fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
+		drmModeAtomicFree(req);
+		if ( rc ) {
+			printf("Failed to deactivate one or more pipes.\n");
+			goto setvidmode_fail_req;			
+		}
+	}
+
+
 	for (drm_pipe *pipe = drm_first_pipe; pipe; pipe = pipe->next) {
 		printf("Attempting plane: %d crtc: %d mode: ", pipe->plane, pipe->crtc);
 
