@@ -8,62 +8,15 @@ static char *chooseDefault(char *str_env, char *str2)
 	return str1 ? str1 : str2;
 }
 
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
-#define bit_name_fn(res)					\
-const char * res##_str(int type) {				\
-	unsigned int i;						\
-	const char *sep = "";					\
-	for (i = 0; i < ARRAY_SIZE(res##_names); i++) {		\
-		if (type & (1 << i)) {				\
-			printf("%s%s", sep, res##_names[i]);	\
-			sep = ", ";				\
-		}						\
-	}							\
-	return NULL;						\
-}
-
-
-static const char *mode_type_names[] = {
-	"builtin",
-	"clock_c",
-	"crtc_c",
-	"preferred",
-	"default",
-	"userdef",
-	"driver",
-};
-
-static bit_name_fn(mode_type)
-
-static const char *mode_flag_names[] = {
-	"phsync",
-	"nhsync",
-	"pvsync",
-	"nvsync",
-	"interlace",
-	"dblscan",
-	"csync",
-	"pcsync",
-	"ncsync",
-	"hskew",
-	"bcast",
-	"pixmux",
-	"dblclk",
-	"clkdiv2"
-};
-
-static bit_name_fn(mode_flag)
-
 static float mode_vrefresh(drmModeModeInfo *mode)
 {
 	return  mode->clock * 1000.00
 			/ (mode->htotal * mode->vtotal);
 }
 
-static void dump_mode(drmModeModeInfo *mode, int index)
+static void dump_mode(drmModeModeInfo *mode)
 {
-	printf("  #%02i %s %.2f %d %d %d %d %d %d %d %d %d",
-	       index,
+	printf("%s %.2f %d %d %d %d %d %d %d %d %d\n",
 	       mode->name,
 	       mode_vrefresh(mode),
 	       mode->hdisplay,
@@ -75,12 +28,6 @@ static void dump_mode(drmModeModeInfo *mode, int index)
 	       mode->vsync_end,
 	       mode->vtotal,
 	       mode->clock);
-
-	printf(" flags: ");
-	mode_flag_str(mode->flags);
-	printf("; type: ");
-	mode_type_str(mode->type);
-	printf("\n");
 }
 
 static const char *pretty[] = {

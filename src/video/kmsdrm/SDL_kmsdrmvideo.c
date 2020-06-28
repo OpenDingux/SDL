@@ -271,26 +271,20 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 
 	#define attempt_add_prop(t, re, id, name, opt, val) \
 		if (!add_property(t, re, id, name, opt, val)) { \
+			drmModeAtomicFree(re); \
 			goto setvidmode_fail_req; \
 		}
 	
-	drm_pipe *pipe;
-	drmModeCrtc *pipe_crtc;
 	Uint32 blob_id = -1;
-	drmModeAtomicReq *req;
-	for (pipe = drm_first_pipe; pipe; pipe = pipe->next) {
-		printf("Attempting plane: %d crtc %d\n", pipe->plane, pipe->crtc);
+	for (drm_pipe *pipe = drm_first_pipe; pipe; pipe = pipe->next) {
+		printf("Attempting plane: %d crtc: %d mode: ", pipe->plane, pipe->crtc);
 
-		pipe_crtc = drmModeGetCrtc(drm_fd, pipe->crtc);
-		if ( !pipe_crtc ) {
-			continue;
-		}
-
-		// Copy CRTC mode
-		drmModeCreatePropertyBlob(drm_fd, &pipe_crtc->mode, sizeof(pipe_crtc->mode), &blob_id);
+		// Use the connector's preferred mode first.
+		drmModeCreatePropertyBlob(drm_fd, &pipe->preferred_mode, sizeof(pipe->preferred_mode), &blob_id);
+		dump_mode(&pipe->preferred_mode);
 
 		// Start a new atomic modeset request
-		req = drmModeAtomicAlloc();
+		drmModeAtomicReq *req = drmModeAtomicAlloc();
 
 		// Setup crtc->connector pipe
 		attempt_add_prop(this, req, pipe->connector, "CRTC_ID", 0, pipe->crtc);
@@ -308,19 +302,19 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		attempt_add_prop(this, req, pipe->plane, "SRC_H", 0, height << 16);
 		attempt_add_prop(this, req, pipe->plane, "CRTC_X", 0, 0);
 		attempt_add_prop(this, req, pipe->plane, "CRTC_Y", 0, 0);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_W", 0, pipe_crtc->width);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_H", 0, pipe_crtc->height);
+		attempt_add_prop(this, req, pipe->plane, "CRTC_W", 0, pipe->preferred_mode.hdisplay);
+		attempt_add_prop(this, req, pipe->plane, "CRTC_H", 0, pipe->preferred_mode.vdisplay);
 
+		int rc = drmModeAtomicCommit(drm_fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
+		drmModeAtomicFree(req);
 		// Modeset successful, remember necessary data
-		if ( !drmModeAtomicCommit(drm_fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL) ) {
-			drm_prev_crtc = pipe_crtc;
+		if ( !rc ) {
+			drm_prev_crtc = drmModeGetCrtc(drm_fd, pipe->crtc);
 			drm_active_pipe = pipe;
 			break;
 		}
 
 		// Modeset failed, clean up request and related objects
-		drmModeAtomicFree(req);
-		drmModeFreeCrtc(pipe_crtc);
 		drmModeDestroyPropertyBlob(drm_fd, blob_id);
 		blob_id = -1;
 	}
@@ -354,10 +348,12 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	return current;
 
 setvidmode_fail_req:
-	drmModeAtomicFree(req);
 	drmModeDestroyPropertyBlob(drm_fd, blob_id);
 setvidmode_fail_realloc:
-	drmModeFreeCrtc(pipe_crtc);
+	if (drm_prev_crtc) {
+		drmModeFreeCrtc(drm_prev_crtc);
+		drm_prev_crtc = NULL;
+	}
 setvidmode_fail_munmap:
 	munmap(drm_map, req_create.size);
 setvidmode_fail_ddumb:
