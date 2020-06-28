@@ -56,6 +56,7 @@ typedef struct drm_pipe {
     Uint32 crtc;
     Uint32 encoder;
     Uint32 connector;
+    drmModeModeInfo preferred_mode;
 
     struct drm_pipe *next;
 } drm_pipe;
@@ -79,8 +80,6 @@ struct SDL_PrivateVideoData {
 	void *map;
 
 	Uint32 fb;
-    drmModeModeInfo mode;
-
     drm_pipe *first_pipe;
     drm_pipe *active_pipe;
     drm_prop_storage *first_prop_store;
@@ -98,7 +97,6 @@ struct SDL_PrivateVideoData {
 #define drm_handle           (this->hidden->handle)
 #define drm_map              (this->hidden->map)
 #define drm_fb               (this->hidden->fb)
-#define drm_mode             (this->hidden->mode)
 #define drm_props_conn       (this->hidden->props_conn)
 #define drm_props_crtc       (this->hidden->props_crtc)
 #define drm_props_plane      (this->hidden->props_plane)

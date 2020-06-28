@@ -101,7 +101,7 @@ static const char *from_mode_object_type(Uint32 type)
 	}
 }
 
-static int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 conn)
+static int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 conn, drmModeModeInfo *preferred_mode)
 {
 	drm_pipe *pipe = calloc(1, sizeof(*pipe));
 	if ( !pipe ) {
@@ -113,6 +113,7 @@ static int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 co
 	pipe->crtc = crtc;
 	pipe->encoder = enc;
 	pipe->connector = conn;
+	memcpy(&pipe->preferred_mode, preferred_mode, sizeof(*preferred_mode));
 
     // We want to remember the pipe order, so save to last.
 	if (drm_first_pipe) {

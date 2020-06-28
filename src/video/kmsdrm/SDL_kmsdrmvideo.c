@@ -165,7 +165,7 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 							conn->count_modes > 0) {
 							// This is a complete, suitable pathway. save it.
 							save_drm_pipe(this, plane->plane_id, crtc->crtc_id, 
-								enc->encoder_id, conn->connector_id);
+								enc->encoder_id, conn->connector_id, &conn->modes[0]);
 						}
 					}
 				}
