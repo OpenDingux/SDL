@@ -104,7 +104,7 @@ struct SDL_PrivateVideoData {
 #define drm_props_plane      (this->hidden->props_plane)
 #define drm_first_prop_store (this->hidden->first_prop_store)
 #define drm_first_pipe       (this->hidden->first_pipe)
-#define drm_active_pipe      (this->hidden->first_pipe)
+#define drm_active_pipe      (this->hidden->active_pipe)
 #define drm_req_destroy_dumb (this->hidden->req_destroy_dumb)
 #define drm_req_create       (this->hidden->req_create)
 #define drm_req_map          (this->hidden->req_map)

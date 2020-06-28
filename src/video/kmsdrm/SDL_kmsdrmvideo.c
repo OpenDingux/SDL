@@ -282,7 +282,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		printf("Attempting plane: %d crtc %d\n", pipe->plane, pipe->crtc);
 
 		pipe_crtc = drmModeGetCrtc(drm_fd, pipe->crtc);
-		if ( !drm_prev_crtc ) {
+		if ( !pipe_crtc ) {
 			continue;
 		}
 
