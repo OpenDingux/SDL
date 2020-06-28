@@ -278,15 +278,14 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	// Gets checked by setvidmode_fail_req cleanup routine, don't reorder.
 	Uint32 blob_id = -1;
 
-	/** 
-	 * TODO:: Figure out if we _have_ to perform this, and if so, whether there's
-	 * any cleaning up to do after this is over and done with.
-	 **/
-	// Disable pipes
+
+	// Disable pipes before attempting to modeset
 	for (drm_pipe *pipe = drm_first_pipe; pipe; pipe = pipe->next) {
 		drmModeAtomicReq *req = drmModeAtomicAlloc();
 
-		// Disconnect crtc->connector pipe, unset crtc mode and disable crtc.
+		// Disconnect plane->connector pipe
+		attempt_add_prop(this, req, pipe->plane, "FB_ID", 0, 0);
+		attempt_add_prop(this, req, pipe->plane, "CRTC_ID", 0, 0);
 		attempt_add_prop(this, req, pipe->connector, "CRTC_ID", 0, 0);
 		attempt_add_prop(this, req, pipe->crtc, "MODE_ID", 0, 0);
 		attempt_add_prop(this, req, pipe->crtc, "ACTIVE", 0, 0);
