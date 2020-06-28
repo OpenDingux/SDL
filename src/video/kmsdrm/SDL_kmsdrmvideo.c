@@ -54,6 +54,7 @@
 #include "SDL_kmsdrmvideo.h"
 #include "SDL_kmsdrmevents_c.h"
 #include "SDL_kmsdrmextras.h"
+#include "SDL_kmsdrmcolordef.h"
 
 #define KMSDRM_DRIVER_NAME "kmsdrm"
 
@@ -166,6 +167,19 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 							// This is a complete, suitable pathway. save it.
 							save_drm_pipe(this, plane->plane_id, crtc->crtc_id, 
 								enc->encoder_id, conn->connector_id, &conn->modes[0]);
+							printf("Supported modes:\n");
+							for (int i = 0; i < conn->count_modes; i++) {
+								printf(" * ");
+								dump_mode(&conn->modes[i]);
+							}
+							printf("Supported formats:\n");
+							for (int i = 0; i < plane->count_formats; i++) {
+								printf(" * %c%c%c%c\n", 
+									 plane->formats[i]        & 0xFF, 
+									(plane->formats[i] >> 8)  & 0xFF, 
+									(plane->formats[i] >> 16) & 0xFF, 
+									 plane->formats[i] >> 24);
+							}
 						}
 					}
 				}
@@ -219,11 +233,18 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	// Lock the event thread, in multi-threading environments
 	SDL_Lock_EventThread();
 
+	// Get rounded bpp number for drm_mode_create_dumb.
+	int round_bpp = get_rounded_bpp(bpp);
+	if ( !round_bpp ) {
+		SDL_SetError("Bad pixel format.\n");
+		return NULL;
+	}
+
 	// Request a dumb buffer from the DRM device
 	struct drm_mode_create_dumb req_create = {
 			.width = width,
 			.height = height,
-			.bpp = (bpp == 24) ? 32 : bpp
+			.bpp = round_bpp
 	};
 
 	if ( drmIoctl(drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, &req_create ) < 0) {
@@ -235,12 +256,24 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		.handle = req_create.handle
 	};
 
+	// Acquire definitions for the specified color depth
+	drm_color_def color_def = {};
+	if ( !get_drm_color_def(&color_def, bpp, 0, req_create.handle, req_create.pitch, flags) ) {
+		SDL_SetError("Unknown color depth %dbpp\n.", bpp);
+		goto setvidmode_fail_ddumb;
+	}
+
+	printf("Creating framebuffer %dx%dx%d (%c%c%c%c)\n", width, height, bpp,
+			 color_def.four_cc        & 0xFF,
+			(color_def.four_cc >>  8) & 0xFF,
+			(color_def.four_cc >> 16) & 0xFF,
+			 color_def.four_cc >> 24);
+
 	/* Create the framebuffer object */
-	if ( drmModeAddFB(drm_fd, width, height,
-			(bpp == 32) ? 24 : 16,
-			(bpp == 24) ? 32 : bpp, req_create.pitch, req_create.handle, &drm_fb) ) {
-			SDL_SetError("Unable to add framebuffer, %s.\n", strerror(errno));
-			goto setvidmode_fail_ddumb;
+	if ( drmModeAddFB2(drm_fd, width, height, color_def.four_cc, &color_def.handles[0],
+            &color_def.pitches[0], &color_def.offsets[0], &drm_fb, 0) ) {
+		SDL_SetError("Unable to create framebuffer, %s.\n", strerror(errno));
+		return NULL;
 	}
 
 	// Request to map our current framebuffer
@@ -294,20 +327,19 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		drmModeAtomicFree(req);
 		if ( rc ) {
 			printf("Failed to deactivate one or more pipes.\n");
-			goto setvidmode_fail_req;			
+			goto setvidmode_fail_req;
 		}
 	}
 
 
 	for (drm_pipe *pipe = drm_first_pipe; pipe; pipe = pipe->next) {
-		printf("Attempting plane: %d crtc: %d mode: ", pipe->plane, pipe->crtc);
-
 		// Use the connector's preferred mode first.
 		drmModeCreatePropertyBlob(drm_fd, &pipe->preferred_mode, sizeof(pipe->preferred_mode), &blob_id);
-		dump_mode(&pipe->preferred_mode);
 
 		// Start a new atomic modeset request
 		drmModeAtomicReq *req = drmModeAtomicAlloc();
+		printf("Attempting plane: %d crtc: %d mode: #%02d ", pipe->plane, pipe->crtc, blob_id);
+		dump_mode(&pipe->preferred_mode);
 
 		// Setup crtc->connector pipe
 		attempt_add_prop(this, req, pipe->connector, "CRTC_ID", 0, pipe->crtc);
@@ -335,6 +367,8 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 			drm_prev_crtc = drmModeGetCrtc(drm_fd, pipe->crtc);
 			drm_active_pipe = pipe;
 			break;
+		} else {
+			printf("SetVideoMode failed: %s, retrying.\n", strerror(errno));
 		}
 
 		// Modeset failed, clean up request and related objects
@@ -350,14 +384,10 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 
 	/** TODO:: Investigate color masks from requested modes **/
 	// Let SDL know about the created framebuffer
-	int rbits = req_create.bpp == 16 ? 5 : 8;
-	int gbits = req_create.bpp == 16 ? 6 : 8;
-	int bbits = req_create.bpp == 16 ? 5 : 8;
-	#define MASK(bits_per_pixel) (0xFF >> (8-bits_per_pixel))
-	if ( ! SDL_ReallocFormat(current, req_create.bpp, MASK(rbits) << 24,
-					MASK(gbits) << 16, MASK(bbits) << 8, 0) ) {
-			SDL_SetError("Unable to recreate surface format structure!\n");
-			goto setvidmode_fail_realloc;
+	if ( ! SDL_ReallocFormat(current, round_bpp, color_def.r_mask, color_def.g_mask,
+	        color_def.b_mask, color_def.a_mask) ) {
+		SDL_SetError("Unable to recreate surface format structure!\n");
+		goto setvidmode_fail_realloc;
 	}
 
 	current->w = req_create.width;
