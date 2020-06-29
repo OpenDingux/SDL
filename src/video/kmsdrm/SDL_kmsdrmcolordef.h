@@ -3,6 +3,7 @@
 
 #include <libdrm/drm_fourcc.h>
 
+#define KMSDRM_DEFAULT_COLOR_DEPTH 16
 typedef struct drm_color_def {
     Uint32 four_cc;
     Uint32 handles[4];
@@ -54,11 +55,10 @@ int get_drm_color_def(drm_color_def *dst, int depth, int isyuv, Uint32 handle, U
 }
 
 /* Pick a bpp value that is appropriate for drm_mode_create_dumb. */
-int get_rounded_bpp(int depth)
+int get_rounded_bpp(int depth, int def)
 {
     switch(depth) {
-    //case  8: return 8;
-    case  0:
+    case  8: return def; /** TODO:: Palletized color depth support **/ 
     case 15:
     case 16: return 16;
     case 24:

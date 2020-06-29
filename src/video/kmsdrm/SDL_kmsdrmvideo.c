@@ -233,8 +233,13 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	// Lock the event thread, in multi-threading environments
 	SDL_Lock_EventThread();
 
+	/** TODO:: Investigate how to pick the preferred color depth if set to zero. **/
+	if ( !bpp ) {
+		bpp = KMSDRM_DEFAULT_COLOR_DEPTH;
+	}
+
 	// Get rounded bpp number for drm_mode_create_dumb.
-	int round_bpp = get_rounded_bpp(bpp);
+	int round_bpp = get_rounded_bpp(bpp, KMSDRM_DEFAULT_COLOR_DEPTH);
 	if ( !round_bpp ) {
 		SDL_SetError("Bad pixel format.\n");
 		return NULL;
@@ -384,7 +389,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 
 	/** TODO:: Investigate color masks from requested modes **/
 	// Let SDL know about the created framebuffer
-	if ( ! SDL_ReallocFormat(current, round_bpp, color_def.r_mask, color_def.g_mask,
+	if ( ! SDL_ReallocFormat(current, bpp, color_def.r_mask, color_def.g_mask,
 	        color_def.b_mask, color_def.a_mask) ) {
 		SDL_SetError("Unable to recreate surface format structure!\n");
 		goto setvidmode_fail_realloc;
