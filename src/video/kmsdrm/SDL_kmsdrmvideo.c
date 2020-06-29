@@ -221,12 +221,6 @@ SDL_Rect **KMSDRM_ListModes(_THIS, SDL_PixelFormat *format, Uint32 flags)
    	return (SDL_Rect **) -1;
 }
 
-uint32_t pixelFormatToFourCC(SDL_PixelFormat *fmt)
-{
-	/** TODO:: Unstub. **/
-	return 0;
-}
-
 SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 				int width, int height, int bpp, Uint32 flags)
 {
