@@ -71,6 +71,14 @@ typedef struct drm_prop_arg {
 	int optional;
 } drm_prop_arg;
 
+typedef struct drm_buffer {
+    struct drm_mode_destroy_dumb req_destroy_dumb;
+    struct drm_mode_create_dumb req_create;
+    struct drm_mode_map_dumb req_map;
+    Uint32 buf_id;
+    void *map;
+} drm_buffer;
+
 struct SDL_PrivateVideoData {
     SDL_Rect **vid_modes;
 
@@ -79,14 +87,13 @@ struct SDL_PrivateVideoData {
 	Uint32 handle;
 	void *map;
 
-	Uint32 fb;
     drm_pipe *first_pipe;
     drm_pipe *active_pipe;
     drm_prop_storage *first_prop_store;
-
-    struct drm_mode_destroy_dumb req_destroy_dumb;
-    struct drm_mode_create_dumb req_create;
-    struct drm_mode_map_dumb req_map;
+    drm_buffer buffers[3];
+    Uint32 mode_blob_id;
+    Uint32 fb_id_prop;
+    Uint32 front_buffer;
 
     drmModeCrtc *prev_crtc;
 };
@@ -96,9 +103,13 @@ struct SDL_PrivateVideoData {
 #define drm_size             (this->hidden->size)
 #define drm_handle           (this->hidden->handle)
 #define drm_map              (this->hidden->map)
-#define drm_fb               (this->hidden->fb)
-#define drm_first_prop_store (this->hidden->first_prop_store)
 #define drm_first_pipe       (this->hidden->first_pipe)
+#define drm_first_prop_store (this->hidden->first_prop_store)
+#define drm_buffers          (this->hidden->buffers)
+#define drm_mode_blob_id     (this->hidden->mode_blob_id)
+#define drm_fb_id_prop       (this->hidden->fb_id_prop)
+#define drm_front_buffer     (this->hidden->front_buffer)
+#define drm_back_buffer      (this->hidden->front_buffer ^ 1)
 #define drm_active_pipe      (this->hidden->active_pipe)
 #define drm_req_destroy_dumb (this->hidden->req_destroy_dumb)
 #define drm_req_create       (this->hidden->req_create)

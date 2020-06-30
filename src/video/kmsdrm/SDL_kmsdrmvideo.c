@@ -203,6 +203,12 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 		goto vidinit_fail_fd; /* resources already cleaned up */
 	}
 
+	// These values shouldn't be zero-initialized, so, set them appropriately
+	drm_mode_blob_id = -1;
+	for (int i = 0; i < sizeof(drm_buffers) / sizeof(drm_buffers[0]); i++) {
+		drm_buffers[i].map = (void*)-1;
+	}
+
 	return 0;
 vidinit_fail_res:
 	while (free_drm_prop_storage(this));
@@ -221,11 +227,91 @@ SDL_Rect **KMSDRM_ListModes(_THIS, SDL_PixelFormat *format, Uint32 flags)
    	return (SDL_Rect **) -1;
 }
 
+static int KMSDRM_CreateFramebuffer(_THIS, int idx, Uint32 width, Uint32 height, const drm_color_def *color_def)
+{
+// Request a dumb buffer from the DRM device
+	struct drm_mode_create_dumb *req_create = &drm_buffers[idx].req_create;
+	struct drm_mode_map_dumb *req_map = &drm_buffers[idx].req_map;
+	struct drm_mode_destroy_dumb *req_destroy_dumb = &drm_buffers[idx].req_destroy_dumb;
+
+	// Reserve a handle for framebuffer creation
+	req_create->width = width;
+	req_create->height = height;
+	req_create->bpp = color_def->bpp;
+	if ( drmIoctl(drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, req_create ) < 0) {
+			SDL_SetError("Dumb framebuffer request failed, %s.\n", strerror(errno));
+			return 0;
+	}
+
+	// Remember it in case we need to destroy it in the future
+	req_destroy_dumb->handle = req_create->handle;
+	printf("Creating framebuffer %dx%dx%d (%c%c%c%c)\n", width, height, color_def->bpp,
+			 color_def->four_cc        & 0xFF,
+			(color_def->four_cc >>  8) & 0xFF,
+			(color_def->four_cc >> 16) & 0xFF,
+			 color_def->four_cc >> 24);
+
+	// Calculate the necessary information to create the framebuffer
+	Uint32 handles[4] = {};
+	Uint32 pitches[4] = {};
+	Uint32 offsets[4] = {};
+	get_framebuffer_args(color_def, req_create->handle, req_create->pitch, 
+		&handles[0], &pitches[0], &offsets[0]);
+
+	// Create the framebuffer object
+	if ( drmModeAddFB2(drm_fd, width, height, color_def->four_cc, &handles[0], 
+			&pitches[0], &offsets[0], &drm_buffers[idx].buf_id, 0) ) {
+		SDL_SetError("Unable to create framebuffer, %s.\n", strerror(errno));
+		goto createfb_fail_ddumb;
+	}
+
+	// Request information on how to map our framebuffer
+	req_map->handle = req_create->handle;
+	if ( drmIoctl(drm_fd, DRM_IOCTL_MODE_MAP_DUMB, req_map) < 0 ) {
+		SDL_SetError("Map data request failed, %s.\n", strerror(errno));
+		goto createfb_fail_rmfb;
+	}
+
+	// Map the framebuffer
+	drm_buffers[idx].map = mmap(0, req_create->size, PROT_READ | PROT_WRITE, MAP_SHARED, drm_fd, req_map->offset);
+	if ( drm_map == MAP_FAILED ) {
+		SDL_SetError("Failed to map framebuffer, %s.\n", strerror(errno));
+		goto createfb_fail_rmfb;
+	}
+
+	return 1;
+
+createfb_fail_rmfb:
+	drmModeRmFB(drm_fd, drm_buffers[idx].buf_id);
+createfb_fail_ddumb:
+	drmIoctl(drm_fd, DRM_IOCTL_MODE_DESTROY_DUMB, req_destroy_dumb);
+	drm_buffers[idx].req_create.pitch = 0;
+	return 0;
+}
+
+static void KMSDRM_ClearFramebuffers(_THIS)
+{
+	for (int i = 0; i < sizeof(drm_buffers) / sizeof(drm_buffers[0]); i++) {
+		if (drm_buffers[i].req_create.handle != -1) {
+			drmUnmap(drm_buffers[i].map, drm_buffers[i].req_create.size);
+			drmModeRmFB(drm_fd, drm_buffers[i].buf_id);
+			drmIoctl(drm_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &drm_buffers[i].req_destroy_dumb);
+			drm_buffers[i].map = (void*)-1;
+		}
+	}
+}
+
 SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 				int width, int height, int bpp, Uint32 flags)
 {
 	// Lock the event thread, in multi-threading environments
 	SDL_Lock_EventThread();
+
+	// If we have set a video mode previously, now we need to clean up.
+	if (this->screen) {
+		KMSDRM_ClearFramebuffers(this);
+		drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
+	}
 
 	/** TODO:: Investigate how to pick the preferred color depth if set to zero. **/
 	if ( !bpp ) {
@@ -233,83 +319,28 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	}
 
 	// Get rounded bpp number for drm_mode_create_dumb.
-	int round_bpp = get_rounded_bpp(bpp, KMSDRM_DEFAULT_COLOR_DEPTH);
-	if ( !round_bpp ) {
-		SDL_SetError("Bad pixel format.\n");
-		return NULL;
+	const drm_color_def *color_def = get_drm_color_def(bpp, 0, flags);
+	if ( !color_def ) {
+		SDL_SetError("Bad pixel format (%dbpp).\n", bpp);
+		goto setvidmode_fail;
 	}
 
-	// Request a dumb buffer from the DRM device
-	struct drm_mode_create_dumb req_create = {
-			.width = width,
-			.height = height,
-			.bpp = round_bpp
-	};
+	// Determine how many buffers do we need
+	int n_buf = (flags & SDL_TRIPLEBUF) ? 3 : 
+				(flags & SDL_DOUBLEBUF) ? 2 : 1;
 
-	if ( drmIoctl(drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, &req_create ) < 0) {
-			SDL_SetError("Dumb framebuffer request failed, %s.\n", strerror(errno));
-			goto setvidmode_fail;
+	// Initialize how many framebuffers were requested
+	for (int i = 0; i < n_buf; i++) {
+		if ( !KMSDRM_CreateFramebuffer(this, i, width, height, color_def)) {
+			goto setvidmode_fail_fbs;
+		}
 	}
-
-	struct drm_mode_destroy_dumb req_destroy = {
-		.handle = req_create.handle
-	};
-
-	// Acquire definitions for the specified color depth
-	drm_color_def color_def = {};
-	if ( !get_drm_color_def(&color_def, bpp, 0, req_create.handle, req_create.pitch, flags) ) {
-		SDL_SetError("Unknown color depth %dbpp\n.", bpp);
-		goto setvidmode_fail_ddumb;
-	}
-
-	printf("Creating framebuffer %dx%dx%d (%c%c%c%c)\n", width, height, bpp,
-			 color_def.four_cc        & 0xFF,
-			(color_def.four_cc >>  8) & 0xFF,
-			(color_def.four_cc >> 16) & 0xFF,
-			 color_def.four_cc >> 24);
-
-	/* Create the framebuffer object */
-	if ( drmModeAddFB2(drm_fd, width, height, color_def.four_cc, &color_def.handles[0],
-            &color_def.pitches[0], &color_def.offsets[0], &drm_fb, 0) ) {
-		SDL_SetError("Unable to create framebuffer, %s.\n", strerror(errno));
-		return NULL;
-	}
-
-	// Request to map our current framebuffer
-	struct drm_mode_map_dumb req_map = {
-			.handle = req_create.handle
-	};
-
-	if ( drmIoctl(drm_fd, DRM_IOCTL_MODE_MAP_DUMB, &req_map) < 0 ) {
-			SDL_SetError("Map data request failed, %s.\n", strerror(errno));
-			goto setvidmode_fail_ddumb;
-	}
-
-	// Map the framebuffer
-	drm_map = mmap(0, req_create.size, PROT_READ | PROT_WRITE, MAP_SHARED, drm_fd, req_map.offset);
-	if ( drm_map == MAP_FAILED ) {
-			SDL_SetError("Failed to map framebuffer, %s.\n", strerror(errno));
-			goto setvidmode_fail_ddumb;
-	}
-
-	struct drm_mode_destroy_dumb req_ddumb = {
-		.handle = req_create.handle
-	};
-
-	// Save all the modeset request structures
-	memcpy(&drm_req_destroy_dumb, &req_ddumb, sizeof(req_ddumb));
-	memcpy(&drm_req_create, &req_create, sizeof(req_create));
-	memcpy(&drm_req_map, &req_map, sizeof(req_map));
 
 	#define attempt_add_prop(t, re, id, name, opt, val) \
 		if (!add_property(t, re, id, name, opt, val)) { \
 			drmModeAtomicFree(re); \
 			goto setvidmode_fail_req; \
 		}
-	
-	// Gets checked by setvidmode_fail_req cleanup routine, don't reorder.
-	Uint32 blob_id = -1;
-
 
 	// Disable pipes before attempting to modeset
 	for (drm_pipe *pipe = drm_first_pipe; pipe; pipe = pipe->next) {
@@ -333,20 +364,20 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 
 	for (drm_pipe *pipe = drm_first_pipe; pipe; pipe = pipe->next) {
 		// Use the connector's preferred mode first.
-		drmModeCreatePropertyBlob(drm_fd, &pipe->preferred_mode, sizeof(pipe->preferred_mode), &blob_id);
+		drmModeCreatePropertyBlob(drm_fd, &pipe->preferred_mode, sizeof(pipe->preferred_mode), &drm_mode_blob_id);
 
 		// Start a new atomic modeset request
 		drmModeAtomicReq *req = drmModeAtomicAlloc();
-		printf("Attempting plane: %d crtc: %d mode: #%02d ", pipe->plane, pipe->crtc, blob_id);
+		printf("Attempting plane: %d crtc: %d mode: #%02d ", pipe->plane, pipe->crtc, drm_mode_blob_id);
 		dump_mode(&pipe->preferred_mode);
 
 		// Setup crtc->connector pipe
 		attempt_add_prop(this, req, pipe->connector, "CRTC_ID", 0, pipe->crtc);
-		attempt_add_prop(this, req, pipe->crtc, "MODE_ID", 0, blob_id);
+		attempt_add_prop(this, req, pipe->crtc, "MODE_ID", 0, drm_mode_blob_id);
 		attempt_add_prop(this, req, pipe->crtc, "ACTIVE", 0, 1);
 
 		// Setup plane->crtc pipe
-		attempt_add_prop(this, req, pipe->plane, "FB_ID", 0, drm_fb);
+		attempt_add_prop(this, req, pipe->plane, "FB_ID", 0, drm_buffers[drm_front_buffer].buf_id);
 		attempt_add_prop(this, req, pipe->plane, "CRTC_ID", 0, pipe->crtc);
 
 		// Setup plane details
@@ -371,47 +402,60 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		}
 
 		// Modeset failed, clean up request and related objects
-		drmModeDestroyPropertyBlob(drm_fd, blob_id);
-		blob_id = -1;
+		drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
+		drm_mode_blob_id = -1;
 	}
 
 	// If we've got no active pipe, then modeset failed. Bail out.
 	if ( !drm_active_pipe ) {
 		SDL_SetError("Unable to set video mode.\n");
-		goto setvidmode_fail_munmap;
+		goto setvidmode_fail_realloc;
+	}
+
+	// Acquire the prop_id necessary for flipping buffers
+	if ( (drm_fb_id_prop = get_prop_id(this, drm_active_pipe->plane, "FB_ID")) == -1 ) {
+		goto setvidmode_fail_realloc;
 	}
 
 	/** TODO:: Investigate color masks from requested modes **/
 	// Let SDL know about the created framebuffer
-	if ( ! SDL_ReallocFormat(current, bpp, color_def.r_mask, color_def.g_mask,
-	        color_def.b_mask, color_def.a_mask) ) {
+	if ( ! SDL_ReallocFormat(current, bpp, color_def->r_mask, color_def->g_mask,
+	        color_def->b_mask, color_def->a_mask) ) {
 		SDL_SetError("Unable to recreate surface format structure!\n");
 		goto setvidmode_fail_realloc;
 	}
 
-	current->w = req_create.width;
-	current->h = req_create.height;
-	current->pitch = req_create.pitch;
-	current->pixels = drm_map;
-	current->flags = 0; /** TODO:: Add double, triple buffering and vsync! **/
+	current->w = width;
+	current->h = height;
+	current->pitch = drm_buffers[0].req_create.pitch;
+	// If we got a multibuffer setup, don't expose the front buffer first.
+	if (flags & (SDL_DOUBLEBUF | SDL_TRIPLEBUF)) {
+		current->pixels = drm_buffers[drm_back_buffer].map;
+	}
+	else {
+		current->pixels = drm_buffers[drm_front_buffer].map;
+	}
+	
+	// Let SDL know what type of surface this is. In case the user asks for a
+	// SDL_SWSURFACE video mode, SDL will silently create a shadow buffer
+	// as an intermediary.
+	current->flags = SDL_HWSURFACE | (flags & SDL_DOUBLEBUF) | (flags & SDL_TRIPLEBUF);
 
 	// Unlock the event thread, in multi-threading environments
 	SDL_Unlock_EventThread();
 	return current;
 
 setvidmode_fail_req:
-	drmModeDestroyPropertyBlob(drm_fd, blob_id);
+	drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
+	drm_mode_blob_id = -1;
 setvidmode_fail_realloc:
 	if (drm_prev_crtc) {
 		drmModeFreeCrtc(drm_prev_crtc);
 		drm_prev_crtc = NULL;
 	}
-setvidmode_fail_munmap:
-	munmap(drm_map, req_create.size);
-setvidmode_fail_ddumb:
-	drmIoctl(drm_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &req_destroy);
+setvidmode_fail_fbs:
+	KMSDRM_ClearFramebuffers(this);
 setvidmode_fail:
-
 	SDL_Unlock_EventThread();
 	return NULL;
 }
@@ -437,9 +481,33 @@ static void KMSDRM_UnlockHWSurface(_THIS, SDL_Surface *surface)
 	return;
 }
 
+static int KMSDRM_FlipHWSurface(_THIS, SDL_Surface *surface)
+{
+	if ( !drm_active_pipe )
+		return -2;
+	
+	if (this->screen->flags & SDL_DOUBLEBUF) {
+		// drmModeObjectSetProperty seems to wait for VBlank already, this doesn't
+		// seem really necessary.
+		/*drmVBlank vb = {
+			.request.type = DRM_VBLANK_RELATIVE,
+			.request.sequence = 1,
+		};
+
+		drmWaitVBlank(drm_fd, &vb);*/
+		drmModeObjectSetProperty(drm_fd, drm_active_pipe->plane, 
+			DRM_MODE_OBJECT_PLANE, drm_fb_id_prop, drm_buffers[drm_front_buffer].buf_id);
+		surface->pixels = drm_buffers[drm_back_buffer].map;
+
+		drm_front_buffer ^= 1;
+	}
+
+	return 1;
+}
+
 static void KMSDRM_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 {
-	/* do nothing. */
+	// Do nothing.
 }
 
 int KMSDRM_SetColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
@@ -502,7 +570,7 @@ static SDL_VideoDevice *KMSDRM_CreateDevice(int devindex)
 	device->SetHWAlpha = NULL;
 	device->LockHWSurface = KMSDRM_LockHWSurface;
 	device->UnlockHWSurface = KMSDRM_UnlockHWSurface;
-	device->FlipHWSurface = NULL;
+	device->FlipHWSurface = KMSDRM_FlipHWSurface;
 	device->FreeHWSurface = KMSDRM_FreeHWSurface; // TODO:: Obvious
 	device->SetCaption = NULL;
 	device->SetIcon = NULL;

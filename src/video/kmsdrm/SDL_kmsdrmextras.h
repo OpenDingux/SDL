@@ -148,6 +148,36 @@ static int set_property(_THIS, drmModeAtomicReq *req, struct drm_prop_arg *p)
 	return 1;
 }
 
+static Uint32 get_prop_id(_THIS, Uint32 obj_id, const char *prop_name)
+{
+	drmModeObjectProperties *props = NULL;
+	drmModePropertyRes **props_info = NULL;
+	drm_prop_arg p = {.obj_id = obj_id};
+	strncpy(p.name, prop_name, sizeof(p.name));
+
+	// Try to acquire object
+	if ( (p.obj_type = get_prop_ptrs(this, &props, &props_info, &p)) == 0 ) {
+		SDL_SetError("No known properties for object %d.\n", p.obj_id);
+		return -1;
+	}
+
+	// If the specified object has no property, raise error.
+	if ( !props ) {
+		SDL_SetError("%s has no properties.\n", from_mode_object_type(p.obj_type));
+		return -1;
+	}
+
+	Uint32 idx;
+	if ( (idx = find_prop_info_idx(props, props_info, &p)) < 0 ) {
+		// If this isn't optional, do raise error.
+		SDL_SetError("%s has no property %s.\n", from_mode_object_type(p.obj_type),
+			p.name);
+		return -1;
+	}
+
+	return p.prop_id;
+}
+
 static int _get_property(_THIS, struct drm_prop_arg *p, Uint64 *val)
 {
 	drmModeObjectProperties *props = NULL;
