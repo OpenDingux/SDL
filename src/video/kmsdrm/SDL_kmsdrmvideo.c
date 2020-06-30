@@ -58,6 +58,11 @@
 
 #define KMSDRM_DRIVER_NAME "kmsdrm"
 
+static int KMSDRM_TripleBufferingThread(void *d);
+static void KMSDRM_TripleBufferInit(_THIS);
+static void KMSDRM_TripleBufferStop(_THIS);
+static void KMSDRM_TripleBufferQuit(_THIS);
+
 static void KMSDRM_DeleteDevice(SDL_VideoDevice *device)
 {
 	SDL_free(device->hidden);
@@ -209,6 +214,8 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 		drm_buffers[i].map = (void*)-1;
 	}
 
+	KMSDRM_TripleBufferInit(this);
+
 	return 0;
 vidinit_fail_res:
 	while (free_drm_prop_storage(this));
@@ -311,6 +318,24 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	if (this->screen) {
 		KMSDRM_ClearFramebuffers(this);
 		drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
+
+		if ( drm_triplebuf_thread ) {
+			KMSDRM_TripleBufferStop(this);
+		}
+	}
+
+	// Set all buffer indexes
+	drm_back_buffer = 1;
+	drm_front_buffer = 0;
+	drm_queued_buffer = 2;	
+
+	if ( (flags & SDL_TRIPLEBUF) == SDL_TRIPLEBUF ) {
+		SDL_LockMutex(drm_triplebuf_mutex);
+		drm_triplebuf_thread = SDL_CreateThread(KMSDRM_TripleBufferingThread, this);
+
+		/* Wait until the triplebuf thread is ready */
+		SDL_CondWait(drm_triplebuf_cond, drm_triplebuf_mutex);
+		SDL_UnlockMutex(drm_triplebuf_mutex);
 	}
 
 	/** TODO:: Investigate how to pick the preferred color depth if set to zero. **/
@@ -326,10 +351,11 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	}
 
 	// Determine how many buffers do we need
-	int n_buf = (flags & SDL_TRIPLEBUF) ? 3 : 
-				(flags & SDL_DOUBLEBUF) ? 2 : 1;
+	int n_buf = ((flags & SDL_TRIPLEBUF) == SDL_TRIPLEBUF) ? 3 : 
+				((flags & SDL_TRIPLEBUF) == SDL_DOUBLEBUF) ? 2 : 1;
 
 	// Initialize how many framebuffers were requested
+	printf("Creating %d framebuffers!\n", n_buf);
 	for (int i = 0; i < n_buf; i++) {
 		if ( !KMSDRM_CreateFramebuffer(this, i, width, height, color_def)) {
 			goto setvidmode_fail_fbs;
@@ -428,11 +454,9 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	current->w = width;
 	current->h = height;
 	current->pitch = drm_buffers[0].req_create.pitch;
-	// If we got a multibuffer setup, don't expose the front buffer first.
-	if (flags & (SDL_DOUBLEBUF | SDL_TRIPLEBUF)) {
+	if ( flags & (SDL_DOUBLEBUF | SDL_TRIPLEBUF) ) {
 		current->pixels = drm_buffers[drm_back_buffer].map;
-	}
-	else {
+	} else {
 		current->pixels = drm_buffers[drm_front_buffer].map;
 	}
 	
@@ -481,25 +505,84 @@ static void KMSDRM_UnlockHWSurface(_THIS, SDL_Surface *surface)
 	return;
 }
 
+static int KMSDRM_TripleBufferingThread(void *d)
+{
+	SDL_VideoDevice *this = d;
+
+	SDL_LockMutex(drm_triplebuf_mutex);
+	SDL_CondSignal(drm_triplebuf_cond);
+
+	for (;;) {
+		int page;
+
+		SDL_CondWait(drm_triplebuf_cond, drm_triplebuf_mutex);
+		if (drm_triplebuf_thread_stop)
+			break;
+
+		/* Flip the most recent back buffer with the front buffer */
+		page = drm_queued_buffer;
+		drm_queued_buffer = drm_front_buffer;
+		drm_front_buffer = page;
+
+		/* flip display */
+		drmModeObjectSetProperty(drm_fd, drm_active_pipe->plane, 
+			DRM_MODE_OBJECT_PLANE, drm_fb_id_prop, drm_buffers[drm_queued_buffer].buf_id);
+	}
+
+	SDL_UnlockMutex(drm_triplebuf_mutex);
+	return 0;
+}
+
+static void KMSDRM_TripleBufferInit(_THIS)
+{
+	drm_triplebuf_mutex = SDL_CreateMutex();
+	drm_triplebuf_cond = SDL_CreateCond();
+	drm_triplebuf_thread = NULL;
+}
+
+static void KMSDRM_TripleBufferStop(_THIS)
+{
+	SDL_LockMutex(drm_triplebuf_mutex);
+	drm_triplebuf_thread_stop = 1;
+	SDL_CondSignal(drm_triplebuf_cond);
+	SDL_UnlockMutex(drm_triplebuf_mutex);
+
+	SDL_WaitThread(drm_triplebuf_thread, NULL);
+	drm_triplebuf_thread = NULL;
+}
+
+static void KMSDRM_TripleBufferQuit(_THIS)
+{
+	if (drm_triplebuf_thread)
+		KMSDRM_TripleBufferStop(this);
+	SDL_DestroyMutex(drm_triplebuf_mutex);
+	SDL_DestroyCond(drm_triplebuf_cond);
+}
+
 static int KMSDRM_FlipHWSurface(_THIS, SDL_Surface *surface)
 {
 	if ( !drm_active_pipe )
 		return -2;
 	
-	if (this->screen->flags & SDL_DOUBLEBUF) {
-		// drmModeObjectSetProperty seems to wait for VBlank already, this doesn't
-		// seem really necessary.
-		/*drmVBlank vb = {
-			.request.type = DRM_VBLANK_RELATIVE,
-			.request.sequence = 1,
-		};
-
-		drmWaitVBlank(drm_fd, &vb);*/
+	// Either wait for VSync or for buffer acquire
+	if ( (surface->flags & SDL_TRIPLEBUF) == SDL_DOUBLEBUF ) {
 		drmModeObjectSetProperty(drm_fd, drm_active_pipe->plane, 
-			DRM_MODE_OBJECT_PLANE, drm_fb_id_prop, drm_buffers[drm_front_buffer].buf_id);
-		surface->pixels = drm_buffers[drm_back_buffer].map;
+			DRM_MODE_OBJECT_PLANE, drm_fb_id_prop, drm_buffers[drm_back_buffer].buf_id);
+	} else {
+		SDL_LockMutex(drm_triplebuf_mutex);
+	}
 
-		drm_front_buffer ^= 1;
+	// Swap between the two available buffers
+	int prev_buffer = drm_front_buffer;
+	drm_front_buffer = drm_back_buffer;
+	drm_back_buffer = prev_buffer;
+
+	// Expose the new buffer
+	surface->pixels = drm_buffers[drm_back_buffer].map;
+
+	if ( (surface->flags & SDL_TRIPLEBUF) == SDL_TRIPLEBUF ) {
+		SDL_CondSignal(drm_triplebuf_cond);
+		SDL_UnlockMutex(drm_triplebuf_mutex);
 	}
 
 	return 1;
@@ -523,6 +606,8 @@ void KMSDRM_VideoQuit(_THIS)
 {
 	if (this->screen->pixels != NULL)
 	{
+		KMSDRM_TripleBufferQuit(this);
+		KMSDRM_ClearFramebuffers(this);
 		while (free_drm_prop_storage(this));
 		while (free_drm_pipe(this));
 		/** 

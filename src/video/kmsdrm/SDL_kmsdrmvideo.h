@@ -94,6 +94,13 @@ struct SDL_PrivateVideoData {
     Uint32 mode_blob_id;
     Uint32 fb_id_prop;
     Uint32 front_buffer;
+    Uint32 back_buffer;
+    Uint32 queued_buffer;
+
+	SDL_mutex *triplebuf_mutex;
+	SDL_cond *triplebuf_cond;
+	SDL_Thread *triplebuf_thread;
+	int triplebuf_thread_stop;
 
     drmModeCrtc *prev_crtc;
 };
@@ -109,11 +116,16 @@ struct SDL_PrivateVideoData {
 #define drm_mode_blob_id     (this->hidden->mode_blob_id)
 #define drm_fb_id_prop       (this->hidden->fb_id_prop)
 #define drm_front_buffer     (this->hidden->front_buffer)
-#define drm_back_buffer      (this->hidden->front_buffer ^ 1)
+#define drm_back_buffer      (this->hidden->back_buffer)
+#define drm_queued_buffer    (this->hidden->queued_buffer)
 #define drm_active_pipe      (this->hidden->active_pipe)
 #define drm_req_destroy_dumb (this->hidden->req_destroy_dumb)
 #define drm_req_create       (this->hidden->req_create)
 #define drm_req_map          (this->hidden->req_map)
+#define drm_triplebuf_mutex  (this->hidden->triplebuf_mutex)
+#define drm_triplebuf_cond   (this->hidden->triplebuf_cond)
+#define drm_triplebuf_thread (this->hidden->triplebuf_thread)
+#define drm_triplebuf_thread_stop (this->hidden->triplebuf_thread_stop)
 #define drm_prev_crtc        (this->hidden->prev_crtc)
 
 #endif /* _SDL_kmsdrmvideo_h */
