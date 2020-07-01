@@ -23,7 +23,7 @@ typedef struct drm_color_def {
 /*       |   CODE |BPP| R| G| B| A| RS| GS| BS| AS| */
 MAKE_RGBA(XRGB8888, 32, 8, 8, 8, 0, 16,  8,  0,  0);
 MAKE_RGBA(RGB565,   16, 5, 6, 5, 0, 11,  5,  0,  0);
-MAKE_RGBA(XRGB1555, 16, 5, 5, 5, 0, 11,  5,  0,  0);
+MAKE_RGBA(XRGB1555, 16, 5, 5, 5, 0, 10,  5,  0,  0);
 
 /* Provides information on how to configure color format. */
 const drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
