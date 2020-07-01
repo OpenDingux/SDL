@@ -79,6 +79,12 @@ typedef struct drm_buffer {
     void *map;
 } drm_buffer;
 
+typedef struct drm_input_dev {
+	char *path;
+	int fd;
+	struct drm_input_dev *next;
+} drm_input_dev;
+
 struct SDL_PrivateVideoData {
     SDL_Rect **vid_modes;
 
@@ -103,6 +109,8 @@ struct SDL_PrivateVideoData {
 	int triplebuf_thread_stop;
 
     drmModeCrtc *prev_crtc;
+
+    drm_input_dev *keyboards, *mice;
 };
 
 #define drm_vid_modes        (this->hidden->vid_modes)
