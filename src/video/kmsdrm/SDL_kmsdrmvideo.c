@@ -69,6 +69,55 @@ static void KMSDRM_DeleteDevice(SDL_VideoDevice *device)
 	SDL_free(device);
 }
 
+static int KMSDRM_HasDBufCaps(int fd)
+{
+	Uint64 has_dumb;
+	return (drmGetCap(fd, DRM_CAP_DUMB_BUFFER, &has_dumb) >= 0 && has_dumb);
+}
+
+static int KMSDRM_OpenDevice()
+{
+	int fd;
+
+	// First, see if we have a default node set.
+	const char *env_node = getenv("SDL_VIDEO_KMSDRM_NODE");
+	if (env_node) {
+		fd = open(env_node, O_RDWR | O_CLOEXEC);
+		// Is our DRM device capable of dumb buffers?
+		if ( fd >= 0 && !KMSDRM_HasDBufCaps(fd) ) {
+			fprintf(stderr, "Default node '%s' has no dumb buffer capability.\n", env_node);
+			close(fd);
+			return(-1);
+		}
+	} else {
+		char node_path[] = "/dev/dri/cardxxx";
+		for (int i = 0; i < 128; i++) {
+			snprintf(node_path, sizeof(node_path), "/dev/dri/card%d", i);
+			fd = open(node_path, O_RDWR | O_CLOEXEC);
+
+			// If device node does not exist, stop searching
+			if (fd == -ENOENT) {
+				break;
+			}
+
+			// For any other error code, let's try the next
+			if ( fd < 0 ) {
+				continue;
+			}
+
+			// Is our DRM device capable of dumb buffers? If not, skip it
+			if ( !KMSDRM_HasDBufCaps(fd) ) {
+				close(fd);
+				fd = -1;
+			} else {
+				break;
+			}
+		}
+	}
+
+	return(fd);
+}
+
 static int KMSDRM_Available(void)
 {
 	const char *envr = SDL_getenv("SDL_VIDEODRIVER");
@@ -76,27 +125,20 @@ static int KMSDRM_Available(void)
 		return(1);
 	}
 
-	return(0);
-}
+	int fd = KMSDRM_OpenDevice();
+	if ( fd < 0 ) {
+		return(0);
+	}
 
-static int KMSDRM_HasDBufCaps(int fd)
-{
-	Uint64 has_dumb;
-	return (drmGetCap(fd, DRM_CAP_DUMB_BUFFER, &has_dumb) >= 0 && has_dumb);
+	close(fd);
+	return(1);
 }
 
 int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 {
-	char *node = chooseDefault("SDL_VIDEO_KMSDRM_NODE", "/dev/dri/card0");
-	if ( (drm_fd = open(node, O_RDWR | O_CLOEXEC)) < 0 ) {
-		SDL_SetError("Could not open device '%s'.\n", node);
+	if ( (drm_fd = KMSDRM_OpenDevice()) < 0 ) {
+		SDL_SetError("Could not find any (capable) DRM device.\n");
 		goto vidinit_fail;
-	}
-
-	// Is our DRM device capable of dumb buffers?
-	if ( !KMSDRM_HasDBufCaps(drm_fd) ) {
-		SDL_SetError("Device '%s' does not have dumb buffer capabilities.\n", node);
-		goto vidinit_fail_fd;
 	}
 
 	if (drmSetClientCap(drm_fd, DRM_CLIENT_CAP_ATOMIC, 1)) {

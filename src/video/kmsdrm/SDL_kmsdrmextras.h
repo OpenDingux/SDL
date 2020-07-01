@@ -2,12 +2,6 @@
 #include <stdio.h>
 #include "SDL_kmsdrmvideo.h"
 
-static char *chooseDefault(char *str_env, char *str2)
-{
-	char *str1 = getenv(str_env);
-	return str1 ? str1 : str2;
-}
-
 static float mode_vrefresh(drmModeModeInfo *mode)
 {
 	return  mode->clock * 1000.00
