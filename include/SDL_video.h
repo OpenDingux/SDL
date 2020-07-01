@@ -144,6 +144,7 @@ typedef struct SDL_Surface {
 #define SDL_OPENGLBLIT	0x0000000A	/**< Create an OpenGL rendering context and use it for blitting */
 #define SDL_RESIZABLE	0x00000010	/**< This video mode may be resized */
 #define SDL_NOFRAME	0x00000020	/**< No window caption or edge frame */
+#define SDL_SWIZZLEBGR	0x00000040	/**< Video mode has BGR subpixel ordering (not RGB) */
 /*@}*/
 
 /** Used internally (read-only) */

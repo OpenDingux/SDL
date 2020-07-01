@@ -24,6 +24,9 @@ typedef struct drm_color_def {
 MAKE_RGBA(XRGB8888, 32, 8, 8, 8, 0, 16,  8,  0,  0);
 MAKE_RGBA(RGB565,   16, 5, 6, 5, 0, 11,  5,  0,  0);
 MAKE_RGBA(XRGB1555, 16, 5, 5, 5, 0, 10,  5,  0,  0);
+MAKE_RGBA(XBGR8888, 32, 8, 8, 8, 0,  0,  8, 16,  0);
+MAKE_RGBA(BGR565,   16, 5, 6, 5, 0,  0,  5, 11,  0);
+MAKE_RGBA(XBGR1555, 16, 5, 5, 5, 0,  0,  5, 10,  0);
 
 /* Provides information on how to configure color format. */
 const drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
@@ -32,13 +35,24 @@ const drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
      * TODO:: Implement SDL_BGRSWIZZLE, implement YUV. Until then, isyuv is left
      * unused.
      **/
-    switch(depth) {
-    case 0:
-    case 16: return &KMSDRM_COLOR_RGB565;
-    case 15: return &KMSDRM_COLOR_XRGB1555;
-    case 24:
-    case 32: return &KMSDRM_COLOR_XRGB8888;
-    default: return NULL;
+    if (flags & SDL_SWIZZLEBGR) {
+        switch(depth) {
+        case 0:
+        case 16: return &KMSDRM_COLOR_BGR565;
+        case 15: return &KMSDRM_COLOR_XBGR1555;
+        case 24:
+        case 32: return &KMSDRM_COLOR_XBGR8888;
+        default: return NULL;
+        }
+    } else {
+        switch(depth) {
+        case 0:
+        case 16: return &KMSDRM_COLOR_RGB565;
+        case 15: return &KMSDRM_COLOR_XRGB1555;
+        case 24:
+        case 32: return &KMSDRM_COLOR_XRGB8888;
+        default: return NULL;
+        }
     }
 }
 
@@ -50,6 +64,9 @@ void get_framebuffer_args(const drm_color_def *def, unsigned int handle, unsigne
         case DRM_FORMAT_RGB565:
         case DRM_FORMAT_XRGB1555:
         case DRM_FORMAT_XRGB8888:
+        case DRM_FORMAT_BGR565:
+        case DRM_FORMAT_XBGR1555:
+        case DRM_FORMAT_XBGR8888:
             handles[0] = handle;
             pitches[0] = pitch;
             break;
