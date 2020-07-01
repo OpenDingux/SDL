@@ -258,6 +258,12 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 
 	KMSDRM_TripleBufferInit(this);
 
+	if (KMSDRM_GetKeyboards(this) != 0)
+		goto vidinit_fail_fd;
+
+	if (KMSDRM_GetMice(this) != 0)
+		goto vidinit_fail_fd;
+
 	return 0;
 vidinit_fail_res:
 	while (free_drm_prop_storage(this));
