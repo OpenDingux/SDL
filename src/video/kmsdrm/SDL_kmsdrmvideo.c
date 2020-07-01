@@ -468,7 +468,6 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		drmModeAtomicFree(req);
 		// Modeset successful, remember necessary data
 		if ( !rc ) {
-			drm_prev_crtc = drmModeGetCrtc(drm_fd, pipe->crtc);
 			drm_active_pipe = pipe;
 			break;
 		} else {
@@ -483,12 +482,12 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	// If we've got no active pipe, then modeset failed. Bail out.
 	if ( !drm_active_pipe ) {
 		SDL_SetError("Unable to set video mode.\n");
-		goto setvidmode_fail_realloc;
+		goto setvidmode_fail_fbs;
 	}
 
 	// Acquire the prop_id necessary for flipping buffers
 	if ( (drm_fb_id_prop = get_prop_id(this, drm_active_pipe->plane, "FB_ID")) == -1 ) {
-		goto setvidmode_fail_realloc;
+		goto setvidmode_fail_fbs;
 	}
 
 	/** TODO:: Investigate color masks from requested modes **/
@@ -496,7 +495,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	if ( ! SDL_ReallocFormat(current, bpp, color_def->r_mask, color_def->g_mask,
 	        color_def->b_mask, color_def->a_mask) ) {
 		SDL_SetError("Unable to recreate surface format structure!\n");
-		goto setvidmode_fail_realloc;
+		goto setvidmode_fail_fbs;
 	}
 
 	current->w = width;
@@ -520,11 +519,6 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 setvidmode_fail_req:
 	drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
 	drm_mode_blob_id = -1;
-setvidmode_fail_realloc:
-	if (drm_prev_crtc) {
-		drmModeFreeCrtc(drm_prev_crtc);
-		drm_prev_crtc = NULL;
-	}
 setvidmode_fail_fbs:
 	KMSDRM_ClearFramebuffers(this);
 setvidmode_fail:
@@ -658,12 +652,7 @@ void KMSDRM_VideoQuit(_THIS)
 		KMSDRM_ClearFramebuffers(this);
 		while (free_drm_prop_storage(this));
 		while (free_drm_pipe(this));
-		/** 
-		 * TODO:: Maybe a test application to see how this behaves and if we need
-		 * to really use this to undo the modeset, and how to.
-		 **/
-		if (drm_prev_crtc) drmModeFreeCrtc(drm_prev_crtc);
-		drm_prev_crtc = NULL;
+		
 		this->screen->pixels = NULL;
 	}
 }

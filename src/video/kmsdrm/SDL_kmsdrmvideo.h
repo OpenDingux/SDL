@@ -108,8 +108,6 @@ struct SDL_PrivateVideoData {
 	SDL_Thread *triplebuf_thread;
 	int triplebuf_thread_stop;
 
-    drmModeCrtc *prev_crtc;
-
     drm_input_dev *keyboards, *mice;
 };
 
@@ -134,6 +132,5 @@ struct SDL_PrivateVideoData {
 #define drm_triplebuf_cond   (this->hidden->triplebuf_cond)
 #define drm_triplebuf_thread (this->hidden->triplebuf_thread)
 #define drm_triplebuf_thread_stop (this->hidden->triplebuf_thread_stop)
-#define drm_prev_crtc        (this->hidden->prev_crtc)
 
 #endif /* _SDL_kmsdrmvideo_h */
