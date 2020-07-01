@@ -257,7 +257,7 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 	}
 
 	KMSDRM_TripleBufferInit(this);
-
+	
 	if (KMSDRM_GetKeyboards(this) != 0)
 		goto vidinit_fail_fd;
 
@@ -363,28 +363,20 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	SDL_Lock_EventThread();
 
 	// If we have set a video mode previously, now we need to clean up.
-	if (this->screen) {
-		KMSDRM_ClearFramebuffers(this);
-		drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
-
+	if ( drm_active_pipe ) {
 		if ( drm_triplebuf_thread ) {
 			KMSDRM_TripleBufferStop(this);
 		}
+
+		drm_active_pipe = NULL;
+		KMSDRM_ClearFramebuffers(this);
+		drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
 	}
 
 	// Set all buffer indexes
 	drm_back_buffer = 1;
 	drm_front_buffer = 0;
 	drm_queued_buffer = 2;	
-
-	if ( (flags & SDL_TRIPLEBUF) == SDL_TRIPLEBUF ) {
-		SDL_LockMutex(drm_triplebuf_mutex);
-		drm_triplebuf_thread = SDL_CreateThread(KMSDRM_TripleBufferingThread, this);
-
-		/* Wait until the triplebuf thread is ready */
-		SDL_CondWait(drm_triplebuf_cond, drm_triplebuf_mutex);
-		SDL_UnlockMutex(drm_triplebuf_mutex);
-	}
 
 	/** TODO:: Investigate how to pick the preferred color depth if set to zero. **/
 	if ( !bpp ) {
@@ -511,6 +503,16 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	// SDL_SWSURFACE video mode, SDL will silently create a shadow buffer
 	// as an intermediary.
 	current->flags = SDL_HWSURFACE | (flags & SDL_DOUBLEBUF) | (flags & SDL_TRIPLEBUF);
+
+	if ( (flags & SDL_TRIPLEBUF) == SDL_TRIPLEBUF ) {
+		SDL_LockMutex(drm_triplebuf_mutex);
+		drm_triplebuf_thread_stop = 0;
+		drm_triplebuf_thread = SDL_CreateThread(KMSDRM_TripleBufferingThread, this);
+
+		/* Wait until the triplebuf thread is ready */
+		SDL_CondWait(drm_triplebuf_cond, drm_triplebuf_mutex);
+		SDL_UnlockMutex(drm_triplebuf_mutex);
+	}
 
 	// Unlock the event thread, in multi-threading environments
 	SDL_Unlock_EventThread();
@@ -652,7 +654,7 @@ void KMSDRM_VideoQuit(_THIS)
 		KMSDRM_ClearFramebuffers(this);
 		while (free_drm_prop_storage(this));
 		while (free_drm_pipe(this));
-		
+
 		this->screen->pixels = NULL;
 	}
 }
