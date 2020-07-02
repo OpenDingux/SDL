@@ -37,6 +37,9 @@
 
 #include "../SDL_sysvideo.h"
 
+/* Default refresh rate. Can be set with the environment variable SDL_VIDEO_REFRESHRATE */
+#define KMSDRM_DEFAULT_REFRESHRATE 60
+
 /* Hidden "this" pointer for the video functions */
 #define _THIS	SDL_VideoDevice *this
 
@@ -56,8 +59,8 @@ typedef struct drm_pipe {
     Uint32 crtc;
     Uint32 encoder;
     Uint32 connector;
-    drmModeModeInfo preferred_mode;
-
+    drmModeModeInfo *modes;
+    Uint32 mode_count;
     struct drm_pipe *next;
 } drm_pipe;
 

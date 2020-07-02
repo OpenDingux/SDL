@@ -38,6 +38,7 @@
 
 #include <stdio.h>
 #include <unistd.h>
+#include <math.h>
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <sys/fcntl.h>
@@ -245,7 +246,7 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 							conn->count_modes > 0) {
 							// This is a complete, suitable pathway. save it.
 							save_drm_pipe(this, plane->plane_id, crtc->crtc_id, 
-								enc->encoder_id, conn->connector_id, &conn->modes[0]);
+								enc->encoder_id, conn->connector_id, conn->modes, conn->count_modes);
 							printf("Supported modes:\n");
 							for (int i = 0; i < conn->count_modes; i++) {
 								KMSDRM_RegisterVidMode(this, conn->modes[i].hdisplay, conn->modes[i].vdisplay);
@@ -411,6 +412,16 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
 	}
 
+	// Select the desired refresh rate.
+	int refresh_rate = KMSDRM_DEFAULT_REFRESHRATE;
+	char *r_end, *refresh_env = getenv("SDL_VIDEO_REFRESHRATE");
+	if ( refresh_env ) {
+		long rr = strtol(refresh_env, &r_end, 10);
+		if (*r_end == '\0') {
+			refresh_rate = rr;
+		}
+	}
+
 	// Set all buffer indexes
 	drm_back_buffer = 1;
 	drm_front_buffer = 0;
@@ -462,13 +473,15 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 
 
 	for (drm_pipe *pipe = drm_first_pipe; pipe; pipe = pipe->next) {
+		drmModeModeInfo *closest_mode = find_pipe_closest_refresh(pipe, refresh_rate);
+
 		// Use the connector's preferred mode first.
-		drmModeCreatePropertyBlob(drm_fd, &pipe->preferred_mode, sizeof(pipe->preferred_mode), &drm_mode_blob_id);
+		drmModeCreatePropertyBlob(drm_fd, closest_mode, sizeof(*closest_mode), &drm_mode_blob_id);
 
 		// Start a new atomic modeset request
 		drmModeAtomicReq *req = drmModeAtomicAlloc();
 		printf("Attempting plane: %d crtc: %d mode: #%02d ", pipe->plane, pipe->crtc, drm_mode_blob_id);
-		dump_mode(&pipe->preferred_mode);
+		dump_mode(closest_mode);
 
 		// Setup crtc->connector pipe
 		attempt_add_prop(this, req, pipe->connector, "CRTC_ID", 0, pipe->crtc);
@@ -486,8 +499,8 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		attempt_add_prop(this, req, pipe->plane, "SRC_H", 0, height << 16);
 		attempt_add_prop(this, req, pipe->plane, "CRTC_X", 0, 0);
 		attempt_add_prop(this, req, pipe->plane, "CRTC_Y", 0, 0);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_W", 0, pipe->preferred_mode.hdisplay);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_H", 0, pipe->preferred_mode.vdisplay);
+		attempt_add_prop(this, req, pipe->plane, "CRTC_W", 0, closest_mode->hdisplay);
+		attempt_add_prop(this, req, pipe->plane, "CRTC_H", 0, closest_mode->vdisplay);
 
 		int rc = drmModeAtomicCommit(drm_fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
 		drmModeAtomicFree(req);

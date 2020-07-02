@@ -42,7 +42,7 @@ static const char *from_mode_object_type(Uint32 type)
 	}
 }
 
-static int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 conn, drmModeModeInfo *preferred_mode)
+static int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 conn, drmModeModeInfo *modes, int mode_count)
 {
 	drm_pipe *pipe = calloc(1, sizeof(*pipe));
 	if ( !pipe ) {
@@ -54,7 +54,9 @@ static int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 co
 	pipe->crtc = crtc;
 	pipe->encoder = enc;
 	pipe->connector = conn;
-	memcpy(&pipe->preferred_mode, preferred_mode, sizeof(*preferred_mode));
+	pipe->modes = SDL_calloc(mode_count, sizeof(*pipe->modes));
+	pipe->mode_count = mode_count;
+	memcpy(pipe->modes, modes, sizeof(*modes) * mode_count);
 
     // We want to remember the pipe order, so save to last.
 	if (drm_first_pipe) {
@@ -278,7 +280,24 @@ static int free_drm_pipe(_THIS)
 		return 0;
 
 	drm_pipe *next = drm_first_pipe->next;
+	free(drm_first_pipe->modes);
 	free(drm_first_pipe);
 	drm_first_pipe = next;
 	return 1;
+}
+
+/* Find first mode with the refresh rate closest to the specified. */
+drmModeModeInfo *find_pipe_closest_refresh(drm_pipe *pipe, float refresh)
+{
+	drmModeModeInfo *first = &pipe->modes[0];
+	for (int i = 1; i < pipe->mode_count; i++) {
+		float delta_first = fabs(mode_vrefresh(first) - refresh);
+		float delta_this = fabs(mode_vrefresh(&pipe->modes[i]) - refresh);
+		
+		if (delta_this < delta_first) {
+			first = &pipe->modes[i];
+		}
+	}
+
+	return first;
 }
