@@ -395,6 +395,11 @@ static void KMSDRM_ClearFramebuffers(_THIS)
 	}
 }
 
+static int KMSDRM_VideoModeOK(_THIS, int width, int height, int bpp, Uint32 flags)
+{
+	return (bpp); /* TODO: check that the resolution is really OK */
+}
+
 SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 				int width, int height, int bpp, Uint32 flags)
 {
@@ -728,6 +733,7 @@ static SDL_VideoDevice *KMSDRM_CreateDevice(int devindex)
 	/* Set the function pointers */
 	device->VideoInit = KMSDRM_VideoInit;
 	device->ListModes = KMSDRM_ListModes;
+	device->VideoModeOK = KMSDRM_VideoModeOK;
 	device->SetVideoMode = KMSDRM_SetVideoMode;
 	device->CreateYUVOverlay = NULL;
 	device->SetColors = KMSDRM_SetColors;
