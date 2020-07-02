@@ -134,6 +134,33 @@ static int KMSDRM_Available(void)
 	return(1);
 }
 
+int KMSDRM_LookupVidMode(_THIS, int width, int height)
+{
+	for (int i = 0; i < drm_vid_mode_count; i++) {
+		if (drm_vid_modes[i]->w == width && drm_vid_modes[i]->h == height) {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+void KMSDRM_RegisterVidMode(_THIS, int width, int height)
+{
+	if (KMSDRM_LookupVidMode(this, width, height) >= 0) {
+		return;
+	}
+
+	drm_vid_mode_count++;
+	drm_vid_modes = SDL_realloc(drm_vid_modes, sizeof(*drm_vid_modes) * (drm_vid_mode_count));
+	drm_vid_modes[drm_vid_mode_count] = NULL;
+	drm_vid_modes[drm_vid_mode_count-1] = SDL_calloc(1, sizeof(**drm_vid_modes));
+	drm_vid_modes[drm_vid_mode_count-1]->x = 0;
+	drm_vid_modes[drm_vid_mode_count-1]->y = 0;
+	drm_vid_modes[drm_vid_mode_count-1]->w = width;
+	drm_vid_modes[drm_vid_mode_count-1]->h = height;
+}
+
 int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 {
 	if ( (drm_fd = KMSDRM_OpenDevice()) < 0 ) {
@@ -177,6 +204,11 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 	acquire_props_for(res, connector, CONNECTOR);
 	acquire_props_for(res, encoder, ENCODER);
 
+	// Initialize vid_mode listing
+	drm_vid_mode_count = 0;
+	drm_vid_modes = SDL_realloc(drm_vid_modes, sizeof(*drm_vid_modes) * (drm_vid_mode_count+1));
+	drm_vid_modes[0] = NULL;
+
 	for (int plane_idx = 0; plane_idx < pres->count_planes; plane_idx++) {
 		Uint64 p_type;
 		drmModePlane *plane = drmModeGetPlane(drm_fd, pres->planes[plane_idx]);
@@ -216,6 +248,8 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 								enc->encoder_id, conn->connector_id, &conn->modes[0]);
 							printf("Supported modes:\n");
 							for (int i = 0; i < conn->count_modes; i++) {
+								KMSDRM_RegisterVidMode(this, conn->modes[i].hdisplay, conn->modes[i].vdisplay);
+
 								printf(" * ");
 								dump_mode(&conn->modes[i]);
 							}
@@ -243,6 +277,11 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 	// Setup attempt finished, free resources
 	drmModeFreeResources(res);
 	drmModeFreePlaneResources(pres);
+	if (drm_vid_modes[0]) {
+		this->info.current_w = drm_vid_modes[0]->w;
+		this->info.current_h = drm_vid_modes[0]->h;
+		vformat->BitsPerPixel = KMSDRM_DEFAULT_COLOR_DEPTH;
+	}
 
 	// Check if we did not succeeded
 	if (drm_first_pipe == NULL) {
@@ -278,8 +317,7 @@ vidinit_fail:
 
 SDL_Rect **KMSDRM_ListModes(_THIS, SDL_PixelFormat *format, Uint32 flags)
 {
-	/** TODO:: Unstub. **/
-   	return (SDL_Rect **) -1;
+	return drm_vid_modes;
 }
 
 static int KMSDRM_CreateFramebuffer(_THIS, int idx, Uint32 width, Uint32 height, const drm_color_def *color_def)
@@ -378,13 +416,8 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	drm_front_buffer = 0;
 	drm_queued_buffer = 2;	
 
-	/** TODO:: Investigate how to pick the preferred color depth if set to zero. **/
-	if ( !bpp ) {
-		bpp = KMSDRM_DEFAULT_COLOR_DEPTH;
-	}
-
 	// Get rounded bpp number for drm_mode_create_dumb.
-	const drm_color_def *color_def = get_drm_color_def(bpp, 0, flags);
+	const drm_color_def *color_def = get_drm_color_def(&bpp, 0, flags);
 	if ( !color_def ) {
 		SDL_SetError("Bad pixel format (%dbpp).\n", bpp);
 		goto setvidmode_fail;

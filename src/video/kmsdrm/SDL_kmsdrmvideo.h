@@ -87,6 +87,7 @@ typedef struct drm_input_dev {
 
 struct SDL_PrivateVideoData {
     SDL_Rect **vid_modes;
+    int vid_mode_count;
 
     int fd;
 	Uint32 size;
@@ -112,6 +113,7 @@ struct SDL_PrivateVideoData {
 };
 
 #define drm_vid_modes        (this->hidden->vid_modes)
+#define drm_vid_mode_count   (this->hidden->vid_mode_count)
 #define drm_fd               (this->hidden->fd)
 #define drm_size             (this->hidden->size)
 #define drm_handle           (this->hidden->handle)
