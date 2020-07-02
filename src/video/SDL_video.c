@@ -431,6 +431,7 @@ int SDL_VideoModeOK (int width, int height, int bpp, Uint32 flags)
  */
 static int SDL_GetVideoMode (int *w, int *h, int *BitsPerPixel, Uint32 flags)
 {
+	SDL_VideoDevice *this = current_video;
 	int table, b, i;
 	int supported;
 	int native_bpp;
@@ -448,7 +449,10 @@ static int SDL_GetVideoMode (int *w, int *h, int *BitsPerPixel, Uint32 flags)
 	}
 
 	/* Try the original video mode, get the closest depth */
-	native_bpp = SDL_VideoModeOK(*w, *h, *BitsPerPixel, flags);
+	if (this->VideoModeOK)
+		native_bpp = this->VideoModeOK(this, *w, *h, *BitsPerPixel, flags);
+	else
+		native_bpp = SDL_VideoModeOK(*w, *h, *BitsPerPixel, flags);
 	if ( native_bpp == *BitsPerPixel ) {
 		return(1);
 	}

@@ -63,6 +63,10 @@ struct SDL_VideoDevice {
 	 */
 	SDL_Rect **(*ListModes)(_THIS, SDL_PixelFormat *format, Uint32 flags);
 
+	/* Optional callback. Should return 1 if the given mode is supported,
+	 * 0 otherwise. */
+	int (*VideoModeOK)(_THIS, int width, int height, int bpp, Uint32 flags);
+
 	/* Set the requested video mode, returning a surface which will be
 	   set to the SDL_VideoSurface.  The width and height will already
 	   be verified by ListModes(), and the video subsystem is free to
