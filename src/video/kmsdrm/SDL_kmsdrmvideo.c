@@ -457,26 +457,6 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 			goto setvidmode_fail_req; \
 		}
 
-	// Disable pipes before attempting to modeset
-	for (drm_pipe *pipe = drm_first_pipe; pipe; pipe = pipe->next) {
-		drmModeAtomicReq *req = drmModeAtomicAlloc();
-
-		// Disconnect plane->connector pipe
-		attempt_add_prop(this, req, pipe->plane, "FB_ID", 0, 0);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_ID", 0, 0);
-		attempt_add_prop(this, req, pipe->connector, "CRTC_ID", 0, 0);
-		attempt_add_prop(this, req, pipe->crtc, "MODE_ID", 0, 0);
-		attempt_add_prop(this, req, pipe->crtc, "ACTIVE", 0, 0);
-
-		int rc = drmModeAtomicCommit(drm_fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
-		drmModeAtomicFree(req);
-		if ( rc ) {
-			printf("Failed to deactivate one or more pipes.\n");
-			goto setvidmode_fail_req;
-		}
-	}
-
-
 	for (drm_pipe *pipe = drm_first_pipe; pipe; pipe = pipe->next) {
 		drmModeModeInfo *closest_mode = find_pipe_closest_refresh(pipe, refresh_rate);
 
@@ -485,8 +465,17 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 
 		// Start a new atomic modeset request
 		drmModeAtomicReq *req = drmModeAtomicAlloc();
+
 		printf("Attempting plane: %d crtc: %d mode: #%02d ", pipe->plane, pipe->crtc, drm_mode_blob_id);
 		dump_mode(closest_mode);
+
+		// Disable the other primary planes of this CRTC
+		for (drm_pipe *other = drm_first_pipe; other; other = other->next) {
+			if (other != pipe && other->crtc == pipe->crtc) {
+				attempt_add_prop(this, req, other->plane, "FB_ID", 0, 0);
+				attempt_add_prop(this, req, other->plane, "CRTC_ID", 0, 0);
+			}
+		}
 
 		// Setup crtc->connector pipe
 		attempt_add_prop(this, req, pipe->connector, "CRTC_ID", 0, pipe->crtc);
