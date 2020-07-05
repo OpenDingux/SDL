@@ -153,7 +153,7 @@ void KMSDRM_RegisterVidMode(_THIS, int width, int height)
 	}
 
 	drm_vid_mode_count++;
-	drm_vid_modes = SDL_realloc(drm_vid_modes, sizeof(*drm_vid_modes) * (drm_vid_mode_count));
+	drm_vid_modes = SDL_realloc(drm_vid_modes, sizeof(*drm_vid_modes) * (drm_vid_mode_count + 1));
 	drm_vid_modes[drm_vid_mode_count] = NULL;
 	drm_vid_modes[drm_vid_mode_count-1] = SDL_calloc(1, sizeof(**drm_vid_modes));
 	drm_vid_modes[drm_vid_mode_count-1]->x = 0;
