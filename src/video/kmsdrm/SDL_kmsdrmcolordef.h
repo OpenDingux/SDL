@@ -29,19 +29,14 @@ MAKE_RGBA(BGR565,   16, 5, 6, 5, 0,  0,  5, 11,  0);
 MAKE_RGBA(XBGR1555, 16, 5, 5, 5, 0,  0,  5, 10,  0);
 
 /* Provides information on how to configure color format. */
-const drm_color_def *get_drm_color_def(int *depth, int isyuv, Uint32 flags)
+const drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
 {
     /** 
      * TODO:: Implement SDL_BGRSWIZZLE, implement YUV. Until then, isyuv is left
      * unused.
      **/
     if (flags & SDL_SWIZZLEBGR) {
-        switch(*depth) {
-        /**
-         * Currently unimplemented - set bpp to 16, fallthrough and let the
-         * shadow surface deal with it
-         **/
-        case 8: *depth = 16;
+        switch(depth) {
         case 16: return &KMSDRM_COLOR_BGR565;
         case 15: return &KMSDRM_COLOR_XBGR1555;
         case 24:
@@ -49,12 +44,7 @@ const drm_color_def *get_drm_color_def(int *depth, int isyuv, Uint32 flags)
         default: return NULL;
         }
     } else {
-        switch(*depth) {
-        /**
-         * Currently unimplemented - set bpp to 16, fallthrough and let the
-         * shadow surface deal with it
-         **/
-        case 8: *depth = 16;
+        switch(depth) {
         case 16: return &KMSDRM_COLOR_RGB565;
         case 15: return &KMSDRM_COLOR_XRGB1555;
         case 24:

@@ -397,6 +397,10 @@ static void KMSDRM_ClearFramebuffers(_THIS)
 
 static int KMSDRM_VideoModeOK(_THIS, int width, int height, int bpp, Uint32 flags)
 {
+	// We don't currently support paletted modes
+	if (bpp == 8)
+		return KMSDRM_DEFAULT_COLOR_DEPTH;
+
 	return (bpp); /* TODO: check that the resolution is really OK */
 }
 
@@ -433,7 +437,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	drm_queued_buffer = 2;	
 
 	// Get rounded bpp number for drm_mode_create_dumb.
-	const drm_color_def *color_def = get_drm_color_def(&bpp, 0, flags);
+	const drm_color_def *color_def = get_drm_color_def(bpp, 0, flags);
 	if ( !color_def ) {
 		SDL_SetError("Bad pixel format (%dbpp).\n", bpp);
 		goto setvidmode_fail;
