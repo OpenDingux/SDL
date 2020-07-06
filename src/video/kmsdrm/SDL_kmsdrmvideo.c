@@ -419,6 +419,8 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		drm_active_pipe = NULL;
 		KMSDRM_ClearFramebuffers(this);
 		drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
+		drmModeAtomicFree(this->hidden->drm_req);
+		this->hidden->drm_req = NULL;
 	}
 
 	// Select the desired refresh rate.
@@ -455,9 +457,10 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		}
 	}
 
-	#define attempt_add_prop(t, re, id, name, opt, val) \
-		if (!add_property(t, re, id, name, opt, val)) { \
-			drmModeAtomicFree(re); \
+	#define attempt_add_prop(t, id, name, opt, val) \
+		if (!add_property(t, this->hidden->drm_req, id, name, opt, val)) { \
+			drmModeAtomicFree(this->hidden->drm_req); \
+			this->hidden->drm_req = NULL; \
 			goto setvidmode_fail_req; \
 		}
 
@@ -468,7 +471,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		drmModeCreatePropertyBlob(drm_fd, closest_mode, sizeof(*closest_mode), &drm_mode_blob_id);
 
 		// Start a new atomic modeset request
-		drmModeAtomicReq *req = drmModeAtomicAlloc();
+		this->hidden->drm_req = drmModeAtomicAlloc();
 
 		printf("Attempting plane: %d crtc: %d mode: #%02d ", pipe->plane, pipe->crtc, drm_mode_blob_id);
 		dump_mode(closest_mode);
@@ -476,38 +479,40 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		// Disable the other primary planes of this CRTC
 		for (drm_pipe *other = drm_first_pipe; other; other = other->next) {
 			if (other != pipe && other->crtc == pipe->crtc) {
-				attempt_add_prop(this, req, other->plane, "FB_ID", 0, 0);
-				attempt_add_prop(this, req, other->plane, "CRTC_ID", 0, 0);
+				attempt_add_prop(this, other->plane, "FB_ID", 0, 0);
+				attempt_add_prop(this, other->plane, "CRTC_ID", 0, 0);
 			}
 		}
 
 		// Setup crtc->connector pipe
-		attempt_add_prop(this, req, pipe->connector, "CRTC_ID", 0, pipe->crtc);
-		attempt_add_prop(this, req, pipe->crtc, "MODE_ID", 0, drm_mode_blob_id);
-		attempt_add_prop(this, req, pipe->crtc, "ACTIVE", 0, 1);
+		attempt_add_prop(this, pipe->connector, "CRTC_ID", 0, pipe->crtc);
+		attempt_add_prop(this, pipe->crtc, "MODE_ID", 0, drm_mode_blob_id);
+		attempt_add_prop(this, pipe->crtc, "ACTIVE", 0, 1);
 
 		// Setup plane->crtc pipe
-		attempt_add_prop(this, req, pipe->plane, "FB_ID", 0, drm_buffers[drm_front_buffer].buf_id);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_ID", 0, pipe->crtc);
+		attempt_add_prop(this, pipe->plane, "FB_ID", 0, drm_buffers[drm_front_buffer].buf_id);
+		attempt_add_prop(this, pipe->plane, "CRTC_ID", 0, pipe->crtc);
 
 		// Setup plane details
-		attempt_add_prop(this, req, pipe->plane, "SRC_X", 0, 0);
-		attempt_add_prop(this, req, pipe->plane, "SRC_Y", 0, 0);
-		attempt_add_prop(this, req, pipe->plane, "SRC_W", 0, width << 16);
-		attempt_add_prop(this, req, pipe->plane, "SRC_H", 0, height << 16);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_X", 0, 0);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_Y", 0, 0);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_W", 0, closest_mode->hdisplay);
-		attempt_add_prop(this, req, pipe->plane, "CRTC_H", 0, closest_mode->vdisplay);
+		attempt_add_prop(this, pipe->plane, "SRC_X", 0, 0);
+		attempt_add_prop(this, pipe->plane, "SRC_Y", 0, 0);
+		attempt_add_prop(this, pipe->plane, "SRC_W", 0, width << 16);
+		attempt_add_prop(this, pipe->plane, "SRC_H", 0, height << 16);
+		attempt_add_prop(this, pipe->plane, "CRTC_X", 0, 0);
+		attempt_add_prop(this, pipe->plane, "CRTC_Y", 0, 0);
+		attempt_add_prop(this, pipe->plane, "CRTC_W", 0, closest_mode->hdisplay);
+		attempt_add_prop(this, pipe->plane, "CRTC_H", 0, closest_mode->vdisplay);
 
-		int rc = drmModeAtomicCommit(drm_fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
-		drmModeAtomicFree(req);
+		int rc = drmModeAtomicCommit(drm_fd, this->hidden->drm_req,
+					     DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
 		// Modeset successful, remember necessary data
 		if ( !rc ) {
 			drm_active_pipe = pipe;
 			break;
 		} else {
 			printf("SetVideoMode failed: %s, retrying.\n", strerror(errno));
+			drmModeAtomicFree(this->hidden->drm_req);
+			this->hidden->drm_req = NULL;
 		}
 
 		// Modeset failed, clean up request and related objects
@@ -612,9 +617,18 @@ static int KMSDRM_TripleBufferingThread(void *d)
 		drm_queued_buffer = drm_front_buffer;
 		drm_front_buffer = page;
 
+		drmModeAtomicReqPtr req = drmModeAtomicDuplicate(this->hidden->drm_req);
+
 		/* flip display */
-		drmModeObjectSetProperty(drm_fd, drm_active_pipe->plane, 
-			DRM_MODE_OBJECT_PLANE, drm_fb_id_prop, drm_buffers[drm_queued_buffer].buf_id);
+		if (!add_property(this, req, drm_active_pipe->plane,
+				  "FB_ID", 0, drm_buffers[drm_queued_buffer].buf_id))
+			fprintf(stderr, "Unable to set FB_ID property: %s\n", strerror(errno));
+
+		int rc = drmModeAtomicCommit(drm_fd, req, 0/*DRM_MODE_PAGE_FLIP_EVENT*/, NULL);
+		if (rc)
+			fprintf(stderr, "Unable to flip buffers: %s\n", strerror(errno));
+
+		drmModeAtomicFree(req);
 	}
 
 	SDL_UnlockMutex(drm_triplebuf_mutex);
@@ -651,11 +665,20 @@ static int KMSDRM_FlipHWSurface(_THIS, SDL_Surface *surface)
 {
 	if ( !drm_active_pipe )
 		return -2;
-	
+
 	// Either wait for VSync or for buffer acquire
 	if ( (surface->flags & SDL_TRIPLEBUF) == SDL_DOUBLEBUF ) {
-		drmModeObjectSetProperty(drm_fd, drm_active_pipe->plane, 
-			DRM_MODE_OBJECT_PLANE, drm_fb_id_prop, drm_buffers[drm_back_buffer].buf_id);
+		drmModeAtomicReqPtr req = drmModeAtomicDuplicate(this->hidden->drm_req);
+
+		if (!add_property(this, req, drm_active_pipe->plane,
+				  "FB_ID", 0, drm_buffers[drm_back_buffer].buf_id))
+			fprintf(stderr, "Unable to set FB_ID property: %s\n", strerror(errno));
+
+		int rc = drmModeAtomicCommit(drm_fd, req, 0/*DRM_MODE_PAGE_FLIP_EVENT*/, NULL);
+		if (rc)
+			fprintf(stderr, "Unable to flip buffers: %s\n", strerror(errno));
+
+		drmModeAtomicFree(req);
 	} else {
 		SDL_LockMutex(drm_triplebuf_mutex);
 	}
