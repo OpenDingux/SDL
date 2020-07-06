@@ -400,6 +400,52 @@ static int KMSDRM_VideoModeOK(_THIS, int width, int height, int bpp, Uint32 flag
 	return (bpp); /* TODO: check that the resolution is really OK */
 }
 
+static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
+				int width, int height, int mode_width, int mode_height)
+{
+	unsigned int crtc_w, crtc_h;
+
+	switch (this->hidden->scaling_mode) {
+	case DRM_SCALING_MODE_ASPECT_RATIO:
+		if (width * mode_height > height * mode_width) {
+			crtc_w = mode_width;
+			crtc_h = crtc_w * height / width;
+		} else {
+			crtc_h = mode_height;
+			crtc_w = crtc_h * width / height;
+		}
+		break;
+	case DRM_SCALING_MODE_INTEGER_SCALED:
+		if (width < mode_width && height < mode_height) {
+			crtc_w = width * (mode_width / width);
+			crtc_h = height * (mode_height / height);
+			break;
+		}
+		/* fall-through */
+	case DRM_SCALING_MODE_FULLSCREEN:
+		crtc_w = mode_width;
+		crtc_h = mode_height;
+		break;
+	case DRM_SCALING_MODE_END:
+		fprintf(stderr, "Invalid mode %d\n", this->hidden->scaling_mode);
+		return 1;
+	}
+
+	if (!add_property(this, req, plane_id, "CRTC_X", 0, (mode_width - crtc_w) / 2))
+		return 1;
+
+	if (!add_property(this, req, plane_id, "CRTC_Y", 0, (mode_height - crtc_h) / 2))
+		return 1;
+
+	if (!add_property(this, req, plane_id, "CRTC_W", 0, crtc_w))
+		return 1;
+
+	if (!add_property(this, req, plane_id, "CRTC_H", 0, crtc_h))
+		return 1;
+
+	return 0;
+}
+
 SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 				int width, int height, int bpp, Uint32 flags)
 {
@@ -494,16 +540,25 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		attempt_add_prop(this, pipe->plane, "SRC_Y", 0, 0);
 		attempt_add_prop(this, pipe->plane, "SRC_W", 0, width << 16);
 		attempt_add_prop(this, pipe->plane, "SRC_H", 0, height << 16);
-		attempt_add_prop(this, pipe->plane, "CRTC_X", 0, 0);
-		attempt_add_prop(this, pipe->plane, "CRTC_Y", 0, 0);
-		attempt_add_prop(this, pipe->plane, "CRTC_W", 0, closest_mode->hdisplay);
-		attempt_add_prop(this, pipe->plane, "CRTC_H", 0, closest_mode->vdisplay);
+
+		if (KMSDRM_SetCrtcParams(this, this->hidden->drm_req, pipe->plane, width, height,
+					 closest_mode->hdisplay, closest_mode->vdisplay)) {
+			fprintf(stderr, "Unable to set CRTC params: %s\n", strerror(errno));
+			drmModeAtomicFree(this->hidden->drm_req);
+			this->hidden->drm_req = NULL;
+			goto setvidmode_fail_req;
+		}
 
 		int rc = drmModeAtomicCommit(drm_fd, this->hidden->drm_req,
 					     DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
 		// Modeset successful, remember necessary data
 		if ( !rc ) {
 			drm_active_pipe = pipe;
+
+			this->hidden->w = width;
+			this->hidden->h = height;
+			this->hidden->crtc_w = closest_mode->hdisplay;
+			this->hidden->crtc_h = closest_mode->vdisplay;
 			break;
 		} else {
 			printf("SetVideoMode failed: %s, retrying.\n", strerror(errno));
@@ -615,12 +670,17 @@ static int KMSDRM_TripleBufferingThread(void *d)
 
 		drmModeAtomicReqPtr req = drmModeAtomicDuplicate(this->hidden->drm_req);
 
+		if (KMSDRM_SetCrtcParams(this, req, drm_active_pipe->plane,
+					 this->hidden->w, this->hidden->h,
+					 this->hidden->crtc_w, this->hidden->crtc_h))
+			fprintf(stderr, "Unable to set CRTC params: %s\n", strerror(errno));
+
 		/* flip display */
 		if (!add_property(this, req, drm_active_pipe->plane,
 				  "FB_ID", 0, drm_buffers[drm_queued_buffer].buf_id))
 			fprintf(stderr, "Unable to set FB_ID property: %s\n", strerror(errno));
 
-		int rc = drmModeAtomicCommit(drm_fd, req, 0/*DRM_MODE_PAGE_FLIP_EVENT*/, NULL);
+		int rc = drmModeAtomicCommit(drm_fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
 		if (rc)
 			fprintf(stderr, "Unable to flip buffers: %s\n", strerror(errno));
 
@@ -666,11 +726,16 @@ static int KMSDRM_FlipHWSurface(_THIS, SDL_Surface *surface)
 	if ( (surface->flags & SDL_TRIPLEBUF) == SDL_DOUBLEBUF ) {
 		drmModeAtomicReqPtr req = drmModeAtomicDuplicate(this->hidden->drm_req);
 
+		if (KMSDRM_SetCrtcParams(this, req, drm_active_pipe->plane,
+					 this->hidden->w, this->hidden->h,
+					 this->hidden->crtc_w, this->hidden->crtc_h))
+			fprintf(stderr, "Unable to set CRTC params: %s\n", strerror(errno));
+
 		if (!add_property(this, req, drm_active_pipe->plane,
 				  "FB_ID", 0, drm_buffers[drm_back_buffer].buf_id))
 			fprintf(stderr, "Unable to set FB_ID property: %s\n", strerror(errno));
 
-		int rc = drmModeAtomicCommit(drm_fd, req, 0/*DRM_MODE_PAGE_FLIP_EVENT*/, NULL);
+		int rc = drmModeAtomicCommit(drm_fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
 		if (rc)
 			fprintf(stderr, "Unable to flip buffers: %s\n", strerror(errno));
 

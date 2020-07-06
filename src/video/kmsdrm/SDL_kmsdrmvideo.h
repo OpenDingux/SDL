@@ -88,6 +88,13 @@ typedef struct drm_input_dev {
 	struct drm_input_dev *next;
 } drm_input_dev;
 
+typedef enum {
+	DRM_SCALING_MODE_FULLSCREEN,
+	DRM_SCALING_MODE_ASPECT_RATIO,
+	DRM_SCALING_MODE_INTEGER_SCALED,
+	DRM_SCALING_MODE_END,
+} drm_scaling_mode;
+
 struct SDL_PrivateVideoData {
     SDL_Rect **vid_modes;
     int vid_mode_count;
@@ -114,6 +121,9 @@ struct SDL_PrivateVideoData {
 	int triplebuf_thread_stop;
 
     drm_input_dev *keyboards, *mice;
+    drm_scaling_mode scaling_mode;
+
+    int w, h, crtc_w, crtc_h;
 };
 
 #define drm_vid_modes        (this->hidden->vid_modes)
