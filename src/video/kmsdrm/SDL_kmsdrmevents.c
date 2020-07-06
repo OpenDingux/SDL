@@ -258,7 +258,15 @@ void KMSDRM_InitOSKeymap(_THIS)
 {
 }
 
-static void KMSDRM_PumpInputDev(int fd, const char *path)
+static void KMSDRM_HandleScaling(_THIS)
+{
+	this->hidden->scaling_mode++;
+
+	if (this->hidden->scaling_mode == DRM_SCALING_MODE_END)
+		this->hidden->scaling_mode = 0;
+}
+
+static void KMSDRM_PumpInputDev(_THIS, int fd, const char *path)
 {
 	struct input_event events[32];
 	ssize_t bytes_read;
@@ -276,6 +284,14 @@ static void KMSDRM_PumpInputDev(int fd, const char *path)
 
 		for (i = 0; i < bytes_read / sizeof(*events); i++) {
 			if (events[i].type == EV_KEY) {
+				const char *scaling_key = getenv("SDL_VIDEO_KMSDRM_SCALING_KEY");
+
+				if (scaling_key && events[i].code == atoi(scaling_key)) {
+					if (events[i].value)
+						KMSDRM_HandleScaling(this);
+					continue;
+				}
+
 				keysym.sym = keymap[events[i].code];
 				pressed = events[i].value ? SDL_PRESSED : SDL_RELEASED;
 
@@ -287,14 +303,14 @@ static void KMSDRM_PumpInputDev(int fd, const char *path)
 	}
 }
 
-static void KMSDRM_PumpInputDevList(drm_input_dev *devs)
+static void KMSDRM_PumpInputDevList(_THIS, drm_input_dev *devs)
 {
 
 	for (; devs; devs = devs->next)
-		KMSDRM_PumpInputDev(devs->fd, devs->path);
+		KMSDRM_PumpInputDev(this, devs->fd, devs->path);
 }
 
 void KMSDRM_PumpEvents(_THIS)
 {
-	KMSDRM_PumpInputDevList(this->hidden->keyboards);
+	KMSDRM_PumpInputDevList(this, this->hidden->keyboards);
 }
