@@ -100,6 +100,7 @@ struct SDL_PrivateVideoData {
     drm_pipe *first_pipe;
     drm_pipe *active_pipe;
     drm_prop_storage *first_prop_store;
+    drmModeAtomicReqPtr drm_req;
     drm_buffer buffers[3];
     Uint32 mode_blob_id;
     Uint32 fb_id_prop;
