@@ -100,34 +100,34 @@ out_unref:
 	return(input_devs);
 }
 
-int KMSDRM_GetKeyboards(_THIS)
+void KMSDRM_InitInput(_THIS)
 {
 	drm_input_dev *devs;
 
 	devs = KMSDRM_GetInputDevice("ID_INPUT_KEY");
-	if (!devs)
-		return(1);
-
 	this->hidden->keyboards = devs;
 
 	for (; devs; devs = devs->next)
 		printf("Found keyboard: %s\n", devs->path);
 
-	return(0);
-}
-
-int KMSDRM_GetMice(_THIS)
-{
-	drm_input_dev *devs = KMSDRM_GetInputDevice("ID_INPUT_MOUSE");
-	if (!devs)
-		return(1);
-
+	devs = KMSDRM_GetInputDevice("ID_INPUT_MOUSE");
 	this->hidden->mice = devs;
 
 	for (; devs; devs = devs->next)
-		printf("Found mice: %s\n", devs->path);
+		printf("Found mouse: %s\n", devs->path);
+}
 
-	return(0);
+void KMSDRM_ExitInput(_THIS)
+{
+	drm_input_dev *devs, *next;
+
+	for (devs = this->hidden->keyboards; devs; devs = next) {
+		next = devs->next;
+
+		SDL_free(devs->path);
+		close(devs->fd);
+		SDL_free(devs);
+	}
 }
 
 static const SDLKey keymap[] = {
@@ -252,6 +252,10 @@ static const SDLKey keymap[] = {
 	[KEY_F15] = SDLK_F15,
 
 	[KEY_PRINT] = SDLK_PRINT,
+
+	[BTN_LEFT] = SDL_BUTTON_LEFT,
+	[BTN_RIGHT] = SDL_BUTTON_RIGHT,
+	[BTN_MIDDLE] = SDL_BUTTON_MIDDLE,
 };
 
 void KMSDRM_InitOSKeymap(_THIS)
@@ -292,25 +296,48 @@ static void KMSDRM_PumpInputDev(_THIS, int fd, const char *path)
 					continue;
 				}
 
-				keysym.sym = keymap[events[i].code];
 				pressed = events[i].value ? SDL_PRESSED : SDL_RELEASED;
+				keysym.sym = keymap[events[i].code];
 
-				SDL_PrivateKeyboard(pressed, &keysym);
+				if (events[i].code >= BTN_LEFT && events[i].code <= BTN_TASK) {
+					/* Mouse button event */
+					SDL_PrivateMouseButton(pressed, keysym.sym, 0, 0);
+				} else {
+					/* Keyboard event */
+					SDL_PrivateKeyboard(pressed, &keysym);
+				}
+			} else if (events[i].type == EV_REL) {
+				switch (events[i].code) {
+				case REL_X:
+					SDL_PrivateMouseMotion(0, SDL_TRUE, events[i].value, 0);
+					break;
+				case REL_Y:
+					SDL_PrivateMouseMotion(0, SDL_TRUE, 0, events[i].value);
+					break;
+				case REL_WHEEL:
+					if (events[i].value < 0) {
+						SDL_PrivateMouseButton(SDL_TRUE, SDL_BUTTON_WHEELDOWN, 0, 0);
+						SDL_PrivateMouseButton(SDL_FALSE, SDL_BUTTON_WHEELDOWN, 0, 0);
+					} else {
+						SDL_PrivateMouseButton(SDL_TRUE, SDL_BUTTON_WHEELUP, 0, 0);
+						SDL_PrivateMouseButton(SDL_FALSE, SDL_BUTTON_WHEELUP, 0, 0);
+					}
+					break;
+				default:
+					break;
+				}
 			}
-
-			/* TODO: mice */
 		}
 	}
 }
 
-static void KMSDRM_PumpInputDevList(_THIS, drm_input_dev *devs)
-{
-
-	for (; devs; devs = devs->next)
-		KMSDRM_PumpInputDev(this, devs->fd, devs->path);
-}
-
 void KMSDRM_PumpEvents(_THIS)
 {
-	KMSDRM_PumpInputDevList(this, this->hidden->keyboards);
+	drm_input_dev *devs;
+
+	for (devs = this->hidden->keyboards; devs; devs = devs->next)
+		KMSDRM_PumpInputDev(this, devs->fd, devs->path);
+
+	for (devs = this->hidden->mice; devs; devs = devs->next)
+		KMSDRM_PumpInputDev(this, devs->fd, devs->path);
 }

@@ -28,7 +28,7 @@
 */
 extern void KMSDRM_InitOSKeymap(_THIS);
 extern void KMSDRM_PumpEvents(_THIS);
-extern int KMSDRM_GetKeyboards(_THIS);
-extern int KMSDRM_GetMice(_THIS);
+extern void KMSDRM_InitInput(_THIS);
+extern void KMSDRM_ExitInput(_THIS);
 
 /* end of SDL_nullevents_c.h ... */

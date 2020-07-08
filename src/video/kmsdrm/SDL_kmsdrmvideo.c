@@ -297,12 +297,8 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 	}
 
 	KMSDRM_TripleBufferInit(this);
-	
-	if (KMSDRM_GetKeyboards(this) != 0)
-		goto vidinit_fail_fd;
 
-	if (KMSDRM_GetMice(this) != 0)
-		goto vidinit_fail_fd;
+	KMSDRM_InitInput(this);
 
 	return 0;
 vidinit_fail_res:
@@ -789,6 +785,8 @@ void KMSDRM_VideoQuit(_THIS)
 
 		this->screen->pixels = NULL;
 	}
+
+	KMSDRM_ExitInput(this);
 }
 
 static SDL_VideoDevice *KMSDRM_CreateDevice(int devindex)
