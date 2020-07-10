@@ -70,16 +70,3 @@ void get_framebuffer_args(const drm_color_def *def, unsigned int handle, unsigne
             break;
     }
 }
-
-/* Pick a bpp value that is appropriate for drm_mode_create_dumb. */
-int get_rounded_bpp(int depth, int def)
-{
-    switch(depth) {
-    case  8: return def; /** TODO:: Palletized color depth support **/ 
-    case 15:
-    case 16: return 16;
-    case 24:
-    case 32: return 32;
-    default: return 0;
-    }
-}
