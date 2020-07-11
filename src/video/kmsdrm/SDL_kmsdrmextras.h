@@ -135,7 +135,6 @@ static int set_property(_THIS, drmModeAtomicReq *req, struct drm_prop_arg *p)
 	}
 
 	// Finally try adding/setting the property
-	printf("setting %lld to %s (%s, %d, %d).\n", p->value, p->name, from_mode_object_type(p->obj_type), p->obj_id, p->prop_id);
 	if ( drmModeAtomicAddProperty(req, p->obj_id, p->prop_id, p->value) < 0 ) {
 		printf("Failed to set %s property for %s, %s.\n", p->name, 
 		    from_mode_object_type(p->obj_type), strerror(errno));
