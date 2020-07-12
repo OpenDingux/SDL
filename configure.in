@@ -1398,8 +1398,9 @@ AC_HELP_STRING([--enable-video-kmsdrm], [use kmsdrm video driver [[default=yes]]
 
         LIBDRM_REQUIRED_VERSION=2.4.46
 		LIBUDEV_REQUIRED_VERSION=1.6.3
-        AC_MSG_CHECKING(for kms/drm support)
         AC_PATH_PROG(PKG_CONFIG, pkg-config, no)
+        
+        AC_MSG_CHECKING(for kms/drm support)
         if test x$PKG_CONFIG != xno; then
             if $PKG_CONFIG --atleast-version $LIBDRM_REQUIRED_VERSION libdrm &&
 				$PKG_CONFIG --atleast-version $LIBUDEV_REQUIRED_VERSION libudev; then
@@ -1408,8 +1409,8 @@ AC_HELP_STRING([--enable-video-kmsdrm], [use kmsdrm video driver [[default=yes]]
                 video_kmsdrm=yes
             fi
         fi
-
         AC_MSG_RESULT($video_kmsdrm)
+
         if test x$video_kmsdrm = xyes; then
             AC_DEFINE(SDL_VIDEO_DRIVER_KMSDRM)
             SOURCES="$SOURCES $srcdir/src/video/kmsdrm/*.c"
