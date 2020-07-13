@@ -109,6 +109,8 @@ struct SDL_PrivateVideoData {
 	Uint32 size;
 	Uint32 handle;
 	void *map;
+    Uint8 *shadow_buffer;
+    Uint32 *palette;
 
     drm_pipe *first_pipe;
     drm_pipe *active_pipe;
@@ -138,6 +140,8 @@ struct SDL_PrivateVideoData {
 #define drm_size             (this->hidden->size)
 #define drm_handle           (this->hidden->handle)
 #define drm_map              (this->hidden->map)
+#define drm_shadow_buffer    (this->hidden->shadow_buffer)
+#define drm_palette          (this->hidden->palette)
 #define drm_first_pipe       (this->hidden->first_pipe)
 #define drm_first_prop_store (this->hidden->first_prop_store)
 #define drm_buffers          (this->hidden->buffers)

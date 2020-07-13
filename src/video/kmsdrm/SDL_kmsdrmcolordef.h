@@ -24,6 +24,17 @@ extern drm_color_def KMSDRM_COLOR_BGR565;
 extern drm_color_def KMSDRM_COLOR_XBGR15555;
 extern drm_color_def KMSDRM_COLOR_YUYV;
 
+/** 
+ * TODO:: Figure out if there's any extra information that would be useful to
+ * have in this macro. 
+ **/
+#define MAKE_YUV(type, bpp) \
+    drm_color_def KMSDRM_COLOR_##type = { \
+       DRM_FORMAT_##type, bpp, \
+    };
+
+MAKE_YUV(YUYV, 16);
+
 /* Provides information on how to configure color format. */
 drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags);
 /* Provides necessary arguments for drm framebuffer creation */
