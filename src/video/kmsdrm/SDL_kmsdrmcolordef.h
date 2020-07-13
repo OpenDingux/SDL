@@ -3,6 +3,9 @@
 
 #include <libdrm/drm_fourcc.h>
 
+#ifndef _SDL_kmsdrmcolordef_h
+#define _SDL_kmsdrmcolordef_h
+
 #define KMSDRM_DEFAULT_COLOR_DEPTH 16
 typedef struct drm_color_def {
     Uint32 four_cc;
@@ -29,7 +32,7 @@ MAKE_RGBA(BGR565,   16, 5, 6, 5, 0,  0,  5, 11,  0);
 MAKE_RGBA(XBGR1555, 16, 5, 5, 5, 0,  0,  5, 10,  0);
 
 /* Provides information on how to configure color format. */
-const drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
+static inline drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
 {
     /** 
      * TODO:: Implement SDL_BGRSWIZZLE, implement YUV. Until then, isyuv is left
@@ -54,7 +57,7 @@ const drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
     }
 }
 
-void get_framebuffer_args(const drm_color_def *def, unsigned int handle, unsigned int pitch,
+static inline void get_framebuffer_args(const drm_color_def *def, unsigned int handle, unsigned int pitch,
     Uint32 *handles, Uint32 *pitches, Uint32 *offsets)
 {
     switch (def->four_cc)
@@ -70,3 +73,5 @@ void get_framebuffer_args(const drm_color_def *def, unsigned int handle, unsigne
             break;
     }
 }
+
+#endif /* _SDL_kmsdrmcolordef_h */
