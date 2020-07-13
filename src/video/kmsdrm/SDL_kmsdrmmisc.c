@@ -1,6 +1,11 @@
 
 #include <stdio.h>
+#include <math.h>
+
+#include "SDL_thread.h"
+#include "SDL_video.h"
 #include "SDL_kmsdrmvideo.h"
+#include "SDL_kmsdrmmisc_c.h"
 
 static float mode_vrefresh(drmModeModeInfo *mode)
 {
@@ -8,7 +13,7 @@ static float mode_vrefresh(drmModeModeInfo *mode)
 			/ (mode->htotal * mode->vtotal);
 }
 
-static void dump_mode(drmModeModeInfo *mode)
+void dump_mode(drmModeModeInfo *mode)
 {
 	kmsdrm_dbg_printf("%s %.2f %d %d %d %d %d %d %d %d %d\n",
 	       mode->name,
@@ -42,7 +47,7 @@ static const char *from_mode_object_type(Uint32 type)
 	}
 }
 
-static int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 conn, drmModeModeInfo *modes, int mode_count)
+int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 conn, drmModeModeInfo *modes, int mode_count)
 {
 	drm_pipe *pipe = calloc(1, sizeof(*pipe));
 	if ( !pipe ) {
@@ -105,7 +110,7 @@ static int find_prop_info_idx(drmModeObjectProperties *props,
 	return -1;
 }
 
-static int set_property(_THIS, drmModeAtomicReq *req, struct drm_prop_arg *p)
+static int helper_add_property(_THIS, drmModeAtomicReq *req, struct drm_prop_arg *p)
 {
 	drmModeObjectProperties *props = NULL;
 	drmModePropertyRes **props_info = NULL;
@@ -144,12 +149,12 @@ static int set_property(_THIS, drmModeAtomicReq *req, struct drm_prop_arg *p)
 	return 1;
 }
 
-static Uint32 get_prop_id(_THIS, Uint32 obj_id, const char *prop_name)
+Uint32 get_prop_id(_THIS, Uint32 obj_id, const char *prop_name)
 {
 	drmModeObjectProperties *props = NULL;
 	drmModePropertyRes **props_info = NULL;
 	drm_prop_arg p = {.obj_id = obj_id};
-	strncpy(p.name, prop_name, sizeof(p.name));
+	strncpy(p.name, prop_name, sizeof(p.name)-1);
 
 	// Try to acquire object
 	if ( (p.obj_type = get_prop_ptrs(this, &props, &props_info, &p)) == 0 ) {
@@ -174,7 +179,7 @@ static Uint32 get_prop_id(_THIS, Uint32 obj_id, const char *prop_name)
 	return p.prop_id;
 }
 
-static int _get_property(_THIS, struct drm_prop_arg *p, Uint64 *val)
+static int helper_get_property(_THIS, struct drm_prop_arg *p, Uint64 *val)
 {
 	drmModeObjectProperties *props = NULL;
 	drmModePropertyRes **props_info = NULL;
@@ -202,7 +207,7 @@ static int _get_property(_THIS, struct drm_prop_arg *p, Uint64 *val)
 	return 1;
 }
 
-static int acquire_properties(_THIS, Uint32 id, Uint32 type)
+int acquire_properties(_THIS, Uint32 id, Uint32 type)
 {
 	struct drm_prop_storage *store = calloc(1, sizeof(drm_prop_storage));
 	store->props = drmModeObjectGetProperties(drm_fd, id, type); 
@@ -232,7 +237,7 @@ static int acquire_properties(_THIS, Uint32 id, Uint32 type)
 	return 1;
 }
 
-static int add_property(_THIS, drmModeAtomicReq *req, uint32_t obj_id,
+int add_property(_THIS, drmModeAtomicReq *req, uint32_t obj_id,
 			       const char *name, int opt, uint64_t value)
 {
 	struct drm_prop_arg p = {};
@@ -242,20 +247,20 @@ static int add_property(_THIS, drmModeAtomicReq *req, uint32_t obj_id,
 	p.value = value;
 	p.optional = opt;
 
-	return set_property(this, req, &p);
+	return helper_add_property(this, req, &p);
 }
 
-static int get_property(_THIS, uint32_t obj_id, const char *name, uint64_t *value)
+int get_property(_THIS, uint32_t obj_id, const char *name, uint64_t *value)
 {
 	struct drm_prop_arg p;
 
 	p.obj_id = obj_id;
 	strncpy(p.name, name, sizeof(p.name)-1);
 	
-	return _get_property(this, &p, value);
+	return helper_get_property(this, &p, value);
 }
 
-static int free_drm_prop_storage(_THIS)
+int free_drm_prop_storage(_THIS)
 {
 	if ( !drm_first_prop_store )
 		return 0;
@@ -274,7 +279,7 @@ static int free_drm_prop_storage(_THIS)
 	return 1;
 }
 
-static int free_drm_pipe(_THIS)
+int free_drm_pipe(_THIS)
 {
 	if ( !drm_first_pipe )
 		return 0;
