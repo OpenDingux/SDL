@@ -1,4 +1,11 @@
 
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/*
+ * Copyright (C) 2020 João H. Spies <johnnyonflame@hotmail.com>
+ *
+ * KMS/DRM video backend code for SDL1
+ */
+
 #include <stdio.h>
 #include <math.h>
 
