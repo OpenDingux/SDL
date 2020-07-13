@@ -1395,6 +1395,9 @@ AC_HELP_STRING([--enable-video-kmsdrm], [use kmsdrm video driver [[default=yes]]
                   , enable_video-kmsdrm=yes)
     if test x$enable_video = xyes -a x$enable_video_kmsdrm = xyes; then
         video_kmsdrm=no
+        AC_ARG_ENABLE(kmsdrm-debug,  
+            AC_HELP_STRING([--enable-kmsdrm-debug], [print debug messages [[default=no]]]),
+            , enable_kmsdrm_debug=no)
 
         LIBDRM_REQUIRED_VERSION=2.4.46
 		LIBUDEV_REQUIRED_VERSION=1.6.3
@@ -1412,6 +1415,9 @@ AC_HELP_STRING([--enable-video-kmsdrm], [use kmsdrm video driver [[default=yes]]
         AC_MSG_RESULT($video_kmsdrm)
 
         if test x$video_kmsdrm = xyes; then
+            if test x$enable_kmsdrm_debug = xyes; then
+                EXTRA_CFLAGS="$EXTRA_CFLAGS -DENABLE_KMSDRM_DEBUG"
+            fi
             AC_DEFINE(SDL_VIDEO_DRIVER_KMSDRM)
             SOURCES="$SOURCES $srcdir/src/video/kmsdrm/*.c"
             EXTRA_CFLAGS="$EXTRA_CFLAGS $LIBDRM_CFLAGS"

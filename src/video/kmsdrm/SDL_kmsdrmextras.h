@@ -10,7 +10,7 @@ static float mode_vrefresh(drmModeModeInfo *mode)
 
 static void dump_mode(drmModeModeInfo *mode)
 {
-	printf("%s %.2f %d %d %d %d %d %d %d %d %d\n",
+	kmsdrm_dbg_printf("%s %.2f %d %d %d %d %d %d %d %d %d\n",
 	       mode->name,
 	       mode_vrefresh(mode),
 	       mode->hdisplay,
@@ -71,7 +71,7 @@ static int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 co
         drm_first_pipe = pipe;
     }
     
-	printf("Annotating pipe p: %d cr: %d e: %d con: %d\n", plane, crtc, enc, conn);
+	kmsdrm_dbg_printf("Annotating pipe p: %d cr: %d e: %d con: %d\n", plane, crtc, enc, conn);
 	return 1;
 }
 
@@ -135,9 +135,9 @@ static int set_property(_THIS, drmModeAtomicReq *req, struct drm_prop_arg *p)
 	}
 
 	// Finally try adding/setting the property
-	printf("setting %lld to %s (%s, %d, %d).\n", p->value, p->name, from_mode_object_type(p->obj_type), p->obj_id, p->prop_id);
+	kmsdrm_dbg_printf("setting %lld to %s (%s, %d, %d).\n", p->value, p->name, from_mode_object_type(p->obj_type), p->obj_id, p->prop_id);
 	if ( drmModeAtomicAddProperty(req, p->obj_id, p->prop_id, p->value) < 0 ) {
-		printf("Failed to set %s property for %s, %s.\n", p->name, 
+		kmsdrm_dbg_printf("Failed to set %s property for %s, %s.\n", p->name, 
 		    from_mode_object_type(p->obj_type), strerror(errno));
 	}
 
@@ -223,9 +223,9 @@ static int acquire_properties(_THIS, Uint32 id, Uint32 type)
 	for (int i = 0; i < store->props->count_props; i++) {
 		store->props_info[i] = drmModeGetProperty(drm_fd, store->props->props[i]);
 		if ( store->props_info[i]->count_values > 0 )
-			printf(" * \"%s\": %lld\n", store->props_info[i]->name, store->props_info[i]->values[0]);
+			kmsdrm_dbg_printf(" * \"%s\": %lld\n", store->props_info[i]->name, store->props_info[i]->values[0]);
 		else
-			printf(" * \"%s\": %s\n", store->props_info[i]->name, "??");
+			kmsdrm_dbg_printf(" * \"%s\": %s\n", store->props_info[i]->name, "??");
 	}
 
 	drm_first_prop_store = store;

@@ -108,13 +108,13 @@ void KMSDRM_InitInput(_THIS)
 	this->hidden->keyboards = devs;
 
 	for (; devs; devs = devs->next)
-		printf("Found keyboard: %s\n", devs->path);
+		kmsdrm_dbg_printf("Found keyboard: %s\n", devs->path);
 
 	devs = KMSDRM_GetInputDevice("ID_INPUT_MOUSE");
 	this->hidden->mice = devs;
 
 	for (; devs; devs = devs->next)
-		printf("Found mouse: %s\n", devs->path);
+		kmsdrm_dbg_printf("Found mouse: %s\n", devs->path);
 }
 
 void KMSDRM_ExitInput(_THIS)

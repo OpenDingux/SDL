@@ -35,6 +35,12 @@
 #ifndef _SDL_kmsdrmvideo_h
 #define _SDL_kmsdrmvideo_h
 
+#ifdef ENABLE_KMSDRM_DEBUG
+#define kmsdrm_dbg_printf(fmt, ...) printf(fmt, __VA_ARGS__)
+#else
+#define kmsdrm_dbg_printf(fmt, ...)
+#endif
+
 #include "../SDL_sysvideo.h"
 
 /* Default refresh rate. Can be set with the environment variable SDL_VIDEO_REFRESHRATE */

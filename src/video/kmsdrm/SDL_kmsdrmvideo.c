@@ -195,7 +195,7 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 
 	#define acquire_props_for(_res, type, TYPE) \
 		for (int i = 0; i < _res->count_##type##s; i++) { \
-			printf("PROPS FOR %s %d.\n", #TYPE, _res->type##s[i]); \
+			kmsdrm_dbg_printf("PROPS FOR %s %d.\n", #TYPE, _res->type##s[i]); \
 			acquire_properties(this, _res->type##s[i], DRM_MODE_OBJECT_##TYPE); \
 		}
 
@@ -224,7 +224,7 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 		}
 
 		if (p_type == DRM_PLANE_TYPE_OVERLAY) {
-			printf("Skipping overlay plane %d.\n", plane->plane_id);
+			kmsdrm_dbg_printf("Skipping overlay plane %d.\n", plane->plane_id);
 			drmModeFreePlane(plane);
 			continue;
 		}
@@ -247,16 +247,16 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 							// This is a complete, suitable pathway. save it.
 							save_drm_pipe(this, plane->plane_id, crtc->crtc_id, 
 								enc->encoder_id, conn->connector_id, conn->modes, conn->count_modes);
-							printf("Supported modes:\n");
+							kmsdrm_dbg_printf("Supported modes:\n");
 							for (int i = 0; i < conn->count_modes; i++) {
 								KMSDRM_RegisterVidMode(this, conn->modes[i].hdisplay, conn->modes[i].vdisplay);
 
-								printf(" * ");
+								kmsdrm_dbg_printf(" * ");
 								dump_mode(&conn->modes[i]);
 							}
-							printf("Supported formats:\n");
+							kmsdrm_dbg_printf("Supported formats:\n");
 							for (int i = 0; i < plane->count_formats; i++) {
-								printf(" * %c%c%c%c\n", 
+								kmsdrm_dbg_printf(" * %c%c%c%c\n", 
 									 plane->formats[i]        & 0xFF, 
 									(plane->formats[i] >> 8)  & 0xFF, 
 									(plane->formats[i] >> 16) & 0xFF, 
@@ -335,7 +335,8 @@ static int KMSDRM_CreateFramebuffer(_THIS, int idx, Uint32 width, Uint32 height,
 
 	// Remember it in case we need to destroy it in the future
 	req_destroy_dumb->handle = req_create->handle;
-	printf("Creating framebuffer %dx%dx%d (%c%c%c%c)\n", width, height, color_def->bpp,
+	kmsdrm_dbg_printf("Creating framebuffer %dx%dx%d (%c%c%c%c)\n", 
+			 width, height, color_def->bpp,
 			 color_def->four_cc        & 0xFF,
 			(color_def->four_cc >>  8) & 0xFF,
 			(color_def->four_cc >> 16) & 0xFF,
@@ -492,7 +493,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 				((flags & SDL_TRIPLEBUF) == SDL_DOUBLEBUF) ? 2 : 1;
 
 	// Initialize how many framebuffers were requested
-	printf("Creating %d framebuffers!\n", n_buf);
+	kmsdrm_dbg_printf("Creating %d framebuffers!\n", n_buf);
 	for (int i = 0; i < n_buf; i++) {
 		if ( !KMSDRM_CreateFramebuffer(this, i, width, height, color_def)) {
 			goto setvidmode_fail_fbs;
@@ -515,7 +516,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		// Start a new atomic modeset request
 		this->hidden->drm_req = drmModeAtomicAlloc();
 
-		printf("Attempting plane: %d crtc: %d mode: #%02d ", pipe->plane, pipe->crtc, drm_mode_blob_id);
+		kmsdrm_dbg_printf("Attempting plane: %d crtc: %d mode: #%02d ", pipe->plane, pipe->crtc, drm_mode_blob_id);
 		dump_mode(closest_mode);
 
 		// Disable the other primary planes of this CRTC
@@ -561,7 +562,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 			this->hidden->crtc_h = closest_mode->vdisplay;
 			break;
 		} else {
-			printf("SetVideoMode failed: %s, retrying.\n", strerror(errno));
+			kmsdrm_dbg_printf("SetVideoMode failed: %s, retrying.\n", strerror(errno));
 			drmModeAtomicFree(this->hidden->drm_req);
 			this->hidden->drm_req = NULL;
 		}
