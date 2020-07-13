@@ -36,11 +36,12 @@ MAKE_YUV(YUYV, 16);
 drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
 {
     /** 
-     * TODO:: Implement SDL_BGRSWIZZLE, implement YUV. Until then, isyuv is left
-     * unused.
+     * TODO:: implement actual YUV rather than 8bpp emulation. Until then, 
+     * isyuv is left unused.
      **/
     if (flags & SDL_SWIZZLEBGR) {
         switch(depth) {
+        /* case  8: return &KMSDRM_COLOR_YUYV; */
         case 16: return &KMSDRM_COLOR_BGR565;
         case 15: return &KMSDRM_COLOR_XBGR1555;
         case 24:
@@ -49,6 +50,7 @@ drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
         }
     } else {
         switch(depth) {
+        case  8: return &KMSDRM_COLOR_YUYV;
         case 16: return &KMSDRM_COLOR_RGB565;
         case 15: return &KMSDRM_COLOR_XRGB1555;
         case 24:
@@ -64,6 +66,9 @@ void get_framebuffer_args(const drm_color_def *def, unsigned int handle, unsigne
 {
     switch (def->four_cc)
     {
+        case DRM_FORMAT_YUYV:
+            offsets[0] = 0;
+            /* fall-through */
         case DRM_FORMAT_RGB565:
         case DRM_FORMAT_XRGB1555:
         case DRM_FORMAT_XRGB8888:
