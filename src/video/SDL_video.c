@@ -54,6 +54,9 @@ static VideoBootStrap *bootstrap[] = {
 #if SDL_VIDEO_DRIVER_WSCONS
 	&WSCONS_bootstrap,
 #endif
+#if SDL_VIDEO_DRIVER_KMSDRM
+	&KMSDRM_bootstrap,
+#endif
 #if SDL_VIDEO_DRIVER_FBCON
 	&FBCON_bootstrap,
 #endif
@@ -125,9 +128,6 @@ static VideoBootStrap *bootstrap[] = {
 #endif
 #if SDL_VIDEO_DRIVER_CACA
 	&CACA_bootstrap,
-#endif
-#if SDL_VIDEO_DRIVER_KMSDRM
-	&KMSDRM_bootstrap,
 #endif
 #if SDL_VIDEO_DRIVER_DUMMY
 	&DUMMY_bootstrap,
