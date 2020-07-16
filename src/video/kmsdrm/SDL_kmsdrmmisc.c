@@ -6,6 +6,7 @@
  * KMS/DRM video backend code for SDL1
  */
 
+#include <errno.h>
 #include <stdio.h>
 #include <math.h>
 

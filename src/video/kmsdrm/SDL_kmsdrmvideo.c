@@ -12,7 +12,7 @@
 #include <math.h>
 #include <errno.h>
 #include <sys/ioctl.h>
-#include <sys/fcntl.h>
+#include <fcntl.h>
 
 #include "SDL_endian.h"
 #include "SDL_timer.h"
