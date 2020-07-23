@@ -249,6 +249,9 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 	// Setup attempt finished, free resources
 	drmModeFreeResources(res);
 	drmModeFreePlaneResources(pres);
+
+	// Setup video information
+	this->info.hw_available = 1;
 	if (drm_vid_modes[0]) {
 		this->info.current_w = drm_vid_modes[0]->w;
 		this->info.current_h = drm_vid_modes[0]->h;
