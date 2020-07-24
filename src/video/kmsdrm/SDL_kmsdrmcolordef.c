@@ -8,7 +8,7 @@
         DRM_FORMAT_##type, bpp, \
         (0xFF >> (8-rbits)) << rsh, (0xFF >> (8-gbits)) << gsh, \
         (0xFF >> (8-bbits)) << bsh, (0xFF >> (8-abits)) << ash, \
-        rbits, gbits, bbits, abits, rsh, gsh, bsh, ash, \
+        rbits, gbits, bbits, abits, rsh, gsh, bsh, ash, 1 \
     }
 
 /* Must be kept up-to-date with SDL_kmsdrmcolordef.h */
@@ -24,13 +24,13 @@ MAKE_RGBA(XBGR1555, 16, 5, 5, 5, 0,  0,  5, 10,  0);
  * TODO:: Figure out if there's any extra information that would be useful to
  * have in this macro. 
  **/
-#define MAKE_YUV(type, bpp) \
+#define MAKE_YUV(type, bpp, hf) \
     drm_color_def KMSDRM_COLOR_##type = { \
-       DRM_FORMAT_##type, bpp, \
+       DRM_FORMAT_##type, bpp, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, hf \
     };
 
 /* Must be kept up-to-date with SDL_kmsdrmcolordef.h */
-MAKE_YUV(YUYV, 16);
+MAKE_YUV(YUV444, 8, 3);
 
 /* Provides information on how to configure color format. */
 drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
@@ -41,7 +41,7 @@ drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
      **/
     if (flags & SDL_SWIZZLEBGR) {
         switch(depth) {
-        /* case  8: return &KMSDRM_COLOR_YUYV; */
+        /* case  8: return &KMSDRM_COLOR_YUV444; */
         case 16: return &KMSDRM_COLOR_BGR565;
         case 15: return &KMSDRM_COLOR_XBGR1555;
         case 24:
@@ -50,7 +50,7 @@ drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
         }
     } else {
         switch(depth) {
-        case  8: return &KMSDRM_COLOR_YUYV;
+        case  8: return &KMSDRM_COLOR_YUV444;
         case 16: return &KMSDRM_COLOR_RGB565;
         case 15: return &KMSDRM_COLOR_XRGB1555;
         case 24:
@@ -62,13 +62,18 @@ drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
 
 /* Provides necessary arguments for drm framebuffer creation */
 void get_framebuffer_args(const drm_color_def *def, unsigned int handle, unsigned int pitch,
-    Uint32 *handles, Uint32 *pitches, Uint32 *offsets)
+    Uint16 height, Uint32 *handles, Uint32 *pitches, Uint32 *offsets)
 {
     switch (def->four_cc)
     {
-        case DRM_FORMAT_YUYV:
+        case DRM_FORMAT_YUV444:
+            pitches[0] = pitches[1] = pitches[2] = pitch;
+            handles[0] = handles[1] = handles[2] = handle;
+
             offsets[0] = 0;
-            /* fall-through */
+            offsets[1] = offsets[0] + pitch * height;
+            offsets[2] = offsets[1] + pitch * height;
+            break;
         case DRM_FORMAT_RGB565:
         case DRM_FORMAT_XRGB1555:
         case DRM_FORMAT_XRGB8888:

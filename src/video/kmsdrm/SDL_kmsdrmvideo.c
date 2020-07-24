@@ -298,9 +298,13 @@ static int KMSDRM_CreateFramebuffer(_THIS, int idx, Uint32 width, Uint32 height,
 	struct drm_mode_map_dumb *req_map = &drm_buffers[idx].req_map;
 	struct drm_mode_destroy_dumb *req_destroy_dumb = &drm_buffers[idx].req_destroy_dumb;
 
-	// Reserve a handle for framebuffer creation
+	/**
+	 * Reserve a handle for framebuffer creation.
+	 * A multi planar dumb buffers' height is a multiple of the requested height,
+	 * and varies depending on the color format used.
+	 **/
 	req_create->width = width;
-	req_create->height = height;
+	req_create->height = height * color_def->h_factor;
 	req_create->bpp = color_def->bpp;
 	if ( drmIoctl(drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, req_create ) < 0) {
 			SDL_SetError("Dumb framebuffer request failed, %s.\n", strerror(errno));
@@ -320,7 +324,7 @@ static int KMSDRM_CreateFramebuffer(_THIS, int idx, Uint32 width, Uint32 height,
 	Uint32 handles[4] = {};
 	Uint32 pitches[4] = {};
 	Uint32 offsets[4] = {};
-	get_framebuffer_args(color_def, req_create->handle, req_create->pitch, 
+	get_framebuffer_args(color_def, req_create->handle, req_create->pitch, height,
 		&handles[0], &pitches[0], &offsets[0]);
 
 	// Create the framebuffer object
@@ -385,14 +389,6 @@ static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
 				int width, int height, int mode_width, int mode_height)
 {
 	unsigned int crtc_w, crtc_h;
-	
-	/**
-	 * If we're emulating paletted modes with YUV Surfaces, the resulting
-	 * framebuffer is a 2:1 non-square surface, so it's necessary to correct it.
-	 **/
-	if ( drm_shadow_buffer ) {
-		height = height * 2;
-	}
 
 	switch (this->hidden->scaling_mode) {
 	case DRM_SCALING_MODE_ASPECT_RATIO:
@@ -471,14 +467,12 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	drm_queued_buffer = 2;	
 
 	/** 
-	 * Paletted video modes are emulated with YUV surfaces, for this we need 
-	 * non-square, 2:1 wide YUV framebuffers.
-	 * See KMSDRM_SetColors for more details.
+	 * Paletted video modes are emulated with YUV surfaces, for this, it's
+	 * necessary to create a shadow one here instead of letting SDL handle it.
 	 **/
 	if ( bpp > 0 && bpp <= 8 ) {
 		char *use_yuv_palette = getenv("SDL_VIDEO_KMSDRM_YUVPALETTE");
 		if ( use_yuv_palette && ( (flags & SDL_HWSURFACE) == SDL_HWSURFACE ) ) {
-			width *= 2;
 			drm_shadow_buffer = calloc(width * height, 1);
 			drm_palette = calloc(256, sizeof(*drm_palette));
 		} else {
@@ -611,17 +605,13 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		} else {
 			current->pixels = drm_buffers[drm_front_buffer].map;
 		}
-
-		current->w = width;
-		current->pitch = drm_buffers[0].req_create.pitch;
 	} else {
 		current->pixels = drm_shadow_buffer;
-
-		current->w = width / 2;
-		current->pitch = width / 2;
 	}
 
+	current->w = width;
 	current->h = height;
+	current->pitch = drm_buffers[0].req_create.pitch;
 	
 	// Let SDL know what type of surface this is. In case the user asks for a
 	// SDL_SWSURFACE video mode, SDL will silently create a shadow buffer
@@ -751,19 +741,26 @@ static void KMSDRM_TripleBufferQuit(_THIS)
 
 static void KMSDRM_BlitSWBuffer(_THIS, drm_buffer *buf)
 {
-	Uint16 *scanline_dst = buf->map;
-	Uint8 *scanline_src = drm_shadow_buffer;
-	Uint32 pitch_dst = buf->req_create.pitch / 2; 
-	Uint32 pitch_src = this->hidden->w / 2;
+	Uint32 pitch_dst = buf->req_create.pitch; 
+	Uint32 pitch_src = this->hidden->w;
+
+	Uint8 *dst_y = (Uint8*)buf->map;
+	Uint8 *dst_u = dst_y + this->hidden->h * pitch_dst;
+	Uint8 *dst_v = dst_u + this->hidden->h * pitch_dst;
+	Uint8 *src = drm_shadow_buffer;
 
 	for (int i = 0; i < this->hidden->h; i++) {
-		for (int j = 0; j < this->hidden->w; j+=2) {
-			Uint8 col = scanline_src[j>>1];
-			*(Uint32*)&scanline_dst[j] = drm_palette[col];
+		for (int j = 0; j < this->hidden->w; j++) {
+			Uint32 yuv = drm_palette[src[j]];
+			dst_y[j] = (yuv >> 16) & 0xFF;
+			dst_u[j] = (yuv >> 8)  & 0xFF;
+			dst_v[j] =  yuv        & 0xFF;
 		}
 
-		scanline_dst += pitch_dst;
-		scanline_src += pitch_src;
+		dst_y += pitch_dst;
+		dst_u += pitch_dst;
+		dst_v += pitch_dst;
+		src += pitch_src;
 	}
 }
 
@@ -834,8 +831,8 @@ int KMSDRM_SetColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 	/**
 	 * For devices without support for XRGB modes on the IPU such as ones
 	 * powered by older JZ47xx SoCs, we're going to emulate 8bpp modes with
-	 * non-square YUV surfaces. For this we need to convert the incoming 
-	 * palettes to the 2x wide 4:2:2 YCbCr Rec. 601 full swing equivalents.
+	 * YUV surfaces. For this we need to convert the incoming palettes to the 
+	 * YCbCr Rec. 601 full swing equivalents.
 	 **/
 	if ( drm_palette ) {
 		for (int i = firstcolor; i < firstcolor + ncolors; i++) {
@@ -846,8 +843,8 @@ int KMSDRM_SetColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 			Uint8 Cb = ( ( UINT16_16(128) - YUV_MAT[1][0] * r - YUV_MAT[1][1] * g + YUV_MAT[1][2] * b) >> 16 );
 			Uint8 Cr = ( ( UINT16_16(128) + YUV_MAT[2][0] * r - YUV_MAT[2][1] * g - YUV_MAT[2][2] * b) >> 16 );
 
-			/* [31:0] YCbCr Cr0:Y1:Cb0:Y0 8:8:8:8 little endian */
-			drm_palette[i] = (Cr << 24) | (Yx << 16) | (Cb << 8) | Yx;
+			/* [31:0] X:Y:Cb:Cr 8:8:8:8 little endian */
+			drm_palette[i] = (Yx << 16) | (Cb << 8) | Cr;
 		}
 
 		return(1);
