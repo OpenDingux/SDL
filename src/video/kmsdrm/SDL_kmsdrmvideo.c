@@ -816,7 +816,14 @@ static int KMSDRM_FlipHWSurface(_THIS, SDL_Surface *surface)
 
 static void KMSDRM_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 {
-	// Do nothing.
+	/**
+	 * When double and triple buffering aren't enabled, it is necessary to
+	 * blit from the shadow to the front buffer here manually.
+	 * Otherwise, we will do this on KMSDRM_FlipHWSurface instead.
+	 **/
+	if ( drm_shadow_buffer && !(this->visible->flags & SDL_TRIPLEBUF) ) {
+		KMSDRM_BlitSWBuffer(this, &drm_buffers[drm_front_buffer]);
+	}
 }
 
 #define UINT16_16(val) ((Uint32)(val * (float)(1<<16)))
