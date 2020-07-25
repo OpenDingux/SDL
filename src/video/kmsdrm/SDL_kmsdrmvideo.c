@@ -617,8 +617,8 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	// SDL_SWSURFACE video mode, SDL will silently create a shadow buffer
 	// as an intermediary.
 	current->flags =
-		         SDL_HWSURFACE  | 
-		(flags & SDL_HWPALETTE) | 
+		         SDL_HWSURFACE  |
+		(flags & SDL_HWPALETTE) |
 		(flags & SDL_TRIPLEBUF); /* SDL_TRIPLEBUF implies SDL_DOUBLEBUF */
 
 	if ( (flags & SDL_TRIPLEBUF) == SDL_TRIPLEBUF ) {
@@ -752,9 +752,9 @@ static void KMSDRM_BlitSWBuffer(_THIS, drm_buffer *buf)
 	for (int i = 0; i < this->hidden->h; i++) {
 		for (int j = 0; j < this->hidden->w; j++) {
 			Uint32 yuv = drm_palette[src[j]];
-			dst_y[j] = (yuv >> 16) & 0xFF;
-			dst_u[j] = (yuv >> 8)  & 0xFF;
-			dst_v[j] =  yuv        & 0xFF;
+			dst_y[j] = yuv >> 16;
+			dst_u[j] = yuv >> 8;
+			dst_v[j] = yuv;
 		}
 
 		dst_y += pitch_dst;
