@@ -470,17 +470,11 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	 * Paletted video modes are emulated with YUV surfaces, for this, it's
 	 * necessary to create a shadow one here instead of letting SDL handle it.
 	 **/
-	if ( bpp > 0 && bpp <= 8 ) {
+	if ( bpp > 0 && bpp <= 16 ) {
 		char *use_yuv_palette = getenv("SDL_VIDEO_KMSDRM_YUVPALETTE");
 		if ( use_yuv_palette && ( (flags & SDL_HWSURFACE) == SDL_HWSURFACE ) ) {
-			drm_shadow_buffer = calloc(width * height, 1);
-			drm_palette = calloc(256, sizeof(*drm_palette));
-		} else {
-			/**
-			 * Either SDL_HWSURFACE flag or SDL_VIDEO_KMSDRM_YUVPALETTE env var
-			 * not set, push back the responsability back to SDL instead.
-			 **/
-			bpp = 16;
+			drm_shadow_buffer = calloc(width * height, (bpp + 7) / 8);
+			drm_palette = calloc(1 << bpp, sizeof(*drm_palette));
 		}
 	}
 
@@ -569,6 +563,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 			this->hidden->h = height;
 			this->hidden->crtc_w = closest_mode->hdisplay;
 			this->hidden->crtc_h = closest_mode->vdisplay;
+			this->hidden->bpp = bpp;
 			break;
 		} else {
 			kmsdrm_dbg_printf("SetVideoMode failed: %s, retrying.\n", strerror(errno));
@@ -741,17 +736,23 @@ static void KMSDRM_TripleBufferQuit(_THIS)
 
 static void KMSDRM_BlitSWBuffer(_THIS, drm_buffer *buf)
 {
+	int indexsize = (this->hidden->bpp + 7) / 8;
 	Uint32 pitch_dst = buf->req_create.pitch; 
-	Uint32 pitch_src = this->hidden->w;
+	Uint32 pitch_src = this->hidden->w * indexsize;
+	Uint32 yuv;
 
 	Uint8 *dst_y = (Uint8*)buf->map;
 	Uint8 *dst_u = dst_y + this->hidden->h * pitch_dst;
 	Uint8 *dst_v = dst_u + this->hidden->h * pitch_dst;
 	Uint8 *src = drm_shadow_buffer;
+	Uint16 *src_w = (Uint16 *)src;
 
 	for (int i = 0; i < this->hidden->h; i++) {
 		for (int j = 0; j < this->hidden->w; j++) {
-			Uint32 yuv = drm_palette[src[j]];
+			if (indexsize == 2)
+				yuv = drm_palette[src_w[j]];
+			else
+				yuv = drm_palette[src[j]];
 			dst_y[j] = yuv >> 16;
 			dst_u[j] = yuv >> 8;
 			dst_v[j] = yuv;

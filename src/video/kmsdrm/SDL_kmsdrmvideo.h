@@ -132,6 +132,7 @@ struct SDL_PrivateVideoData {
     drm_scaling_mode scaling_mode;
 
     int w, h, crtc_w, crtc_h;
+    int bpp;
 };
 
 #define drm_vid_modes        (this->hidden->vid_modes)
