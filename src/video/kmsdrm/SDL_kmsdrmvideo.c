@@ -470,7 +470,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	 * Paletted video modes are emulated with YUV surfaces, for this, it's
 	 * necessary to create a shadow one here instead of letting SDL handle it.
 	 **/
-	if ( bpp > 0 && bpp <= 16 ) {
+	if ( bpp > 0 && bpp <= 16 && (flags & SDL_HWPALETTE) == SDL_HWPALETTE ) {
 		char *use_yuv_palette = getenv("SDL_VIDEO_KMSDRM_YUVPALETTE");
 		if ( use_yuv_palette && ( (flags & SDL_HWSURFACE) == SDL_HWSURFACE ) ) {
 			drm_shadow_buffer = calloc(width * height, (bpp + 7) / 8);
