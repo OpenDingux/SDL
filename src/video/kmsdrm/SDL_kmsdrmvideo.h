@@ -133,6 +133,7 @@ struct SDL_PrivateVideoData {
 
     int w, h, crtc_w, crtc_h;
     int bpp;
+    int has_damage_clips;
 };
 
 #define drm_vid_modes        (this->hidden->vid_modes)

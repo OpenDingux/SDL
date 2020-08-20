@@ -607,7 +607,10 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	current->w = width;
 	current->h = height;
 	current->pitch = drm_buffers[0].req_create.pitch;
-	
+
+	this->hidden->has_damage_clips = find_property(this, drm_active_pipe->plane,
+						       "FB_DAMAGE_CLIPS");
+
 	// Let SDL know what type of surface this is. In case the user asks for a
 	// SDL_SWSURFACE video mode, SDL will silently create a shadow buffer
 	// as an intermediary.
@@ -817,6 +820,12 @@ static int KMSDRM_FlipHWSurface(_THIS, SDL_Surface *surface)
 
 static void KMSDRM_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 {
+	struct drm_mode_rect *drm_rects;
+	drmModeAtomicReqPtr req;
+	unsigned int i;
+	Uint32 blob_id;
+	int ret;
+
 	/**
 	 * When double and triple buffering aren't enabled, it is necessary to
 	 * blit from the shadow to the front buffer here manually.
@@ -825,6 +834,54 @@ static void KMSDRM_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 	if ( drm_shadow_buffer && !(this->visible->flags & SDL_TRIPLEBUF) ) {
 		KMSDRM_BlitSWBuffer(this, &drm_buffers[drm_front_buffer]);
 	}
+
+	/**
+	 * this->hidden->drm_req is NULL - SDL_SetVideoMode must be called
+	 * first.
+	 **/
+	if (!this->hidden->drm_req)
+		return;
+
+	/* No FB_DAMAGE_CLIPS property - no need to go further */
+	if (!this->hidden->has_damage_clips)
+		return;
+
+	req = drmModeAtomicDuplicate(this->hidden->drm_req);
+
+	drm_rects = alloca(numrects * sizeof(*drm_rects));
+
+	for (i = 0; i < numrects; i++) {
+		drm_rects[i].x1 = rects[i].x;
+		drm_rects[i].y1 = rects[i].y;
+		drm_rects[i].x2 = rects[i].x + rects[i].w;
+		drm_rects[i].y2 = rects[i].y + rects[i].h;
+	}
+
+	ret = drmModeCreatePropertyBlob(drm_fd, drm_rects,
+					sizeof(*drm_rects) * numrects, &blob_id);
+	if (ret != 0) {
+		fprintf(stderr, "Unable to create damage clips blob\n");
+		return;
+	}
+
+	if (KMSDRM_SetCrtcParams(this, req, drm_active_pipe->plane,
+				 this->hidden->w, this->hidden->h,
+				 this->hidden->crtc_w, this->hidden->crtc_h))
+		fprintf(stderr, "Unable to set CRTC params: %s\n", strerror(errno));
+
+	if (!add_property(this, req, drm_active_pipe->plane,
+			  "FB_DAMAGE_CLIPS", 0, blob_id))
+		fprintf(stderr, "Unable to set FB_DAMAGE_CLIPS property: %s\n", strerror(errno));
+
+	if (!add_property(this, req, drm_active_pipe->plane,
+			  "FB_ID", 0, drm_buffers[drm_front_buffer].buf_id))
+		fprintf(stderr, "Unable to set FB_ID property: %s\n", strerror(errno));
+
+	int rc = drmModeAtomicCommit(drm_fd, req, DRM_MODE_ATOMIC_NONBLOCK, NULL);
+	if (rc && errno != EBUSY)
+		fprintf(stderr, "Unable to update rects: %s\n", strerror(errno));
+
+	drmModeAtomicFree(req);
 }
 
 #define UINT16_16(val) ((Uint32)(val * (float)(1<<16)))
