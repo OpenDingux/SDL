@@ -118,11 +118,11 @@ static int find_prop_info_idx(drmModeObjectProperties *props,
 	return -1;
 }
 
-static int helper_add_property(_THIS, drmModeAtomicReq *req, struct drm_prop_arg *p)
+static int helper_find_property(_THIS, struct drm_prop_arg *p)
 {
 	drmModeObjectProperties *props = NULL;
 	drmModePropertyRes **props_info = NULL;
-	
+
 	// Try to acquire object
 	if ( (p->obj_type = get_prop_ptrs(this, &props, &props_info, p)) == 0 ) {
 		SDL_SetError("No known properties for object %d.\n", p->obj_id);
@@ -135,8 +135,12 @@ static int helper_add_property(_THIS, drmModeAtomicReq *req, struct drm_prop_arg
 		return 0;
 	}
 
-	Uint32 idx;
-	if ( (idx = find_prop_info_idx(props, props_info, p)) < 0 ) {
+	return find_prop_info_idx(props, props_info, p) >= 0;
+}
+
+static int helper_add_property(_THIS, drmModeAtomicReq *req, struct drm_prop_arg *p)
+{
+	if ( helper_find_property(this, p) == 0 ) {
 		// If this is optional, don't raise an error on not finding the property.
 		if (p->optional)
 			return 1;
@@ -243,6 +247,18 @@ int acquire_properties(_THIS, Uint32 id, Uint32 type)
 
 	drm_first_prop_store = store;
 	return 1;
+}
+
+int find_property(_THIS, uint32_t obj_id, const char *name)
+{
+	struct drm_prop_arg p = {};
+
+	p.obj_id = obj_id;
+	strncpy(p.name, name, sizeof(p.name)-1);
+	p.value = 0;
+	p.optional = 0;
+
+	return helper_find_property(this, &p);
 }
 
 int add_property(_THIS, drmModeAtomicReq *req, uint32_t obj_id,
