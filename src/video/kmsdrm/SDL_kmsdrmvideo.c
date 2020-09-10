@@ -734,25 +734,27 @@ static void KMSDRM_TripleBufferQuit(_THIS)
 	SDL_DestroyCond(drm_triplebuf_cond);
 }
 
-static void KMSDRM_BlitSWBuffer(_THIS, drm_buffer *buf)
+static void KMSDRM_BlitSWBuffer8(_THIS, drm_buffer *buf)
 {
-	int indexsize = (this->hidden->bpp + 7) / 8;
-	Uint32 pitch_dst = buf->req_create.pitch; 
-	Uint32 pitch_src = this->hidden->w * indexsize;
-	Uint32 yuv;
-
+	Uint32 pitch_dst = buf->req_create.pitch;
+	Uint32 width = this->hidden->w, height = this->hidden->h;
 	Uint8 *dst_y = (Uint8*)buf->map;
 	Uint8 *dst_u = dst_y + this->hidden->h * pitch_dst;
 	Uint8 *dst_v = dst_u + this->hidden->h * pitch_dst;
 	Uint8 *src = drm_shadow_buffer;
-	Uint16 *src_w = (Uint16 *)src;
+	Uint32 yuv;
+	unsigned int i, j;
 
-	for (int i = 0; i < this->hidden->h; i++) {
-		for (int j = 0; j < this->hidden->w; j++) {
-			if (indexsize == 2)
-				yuv = drm_palette[src_w[j]];
-			else
-				yuv = drm_palette[src[j]];
+	__builtin_prefetch(drm_palette, 0, 3);
+
+	for (i = 0; i < height; i++) {
+		__builtin_prefetch(dst_y, 1, 0);
+		__builtin_prefetch(dst_u, 1, 0);
+		__builtin_prefetch(dst_v, 1, 0);
+		__builtin_prefetch(src, 0, 2);
+
+		for (j = 0; j < width; j++) {
+			yuv = drm_palette[src[j]];
 			dst_y[j] = yuv >> 16;
 			dst_u[j] = yuv >> 8;
 			dst_v[j] = yuv;
@@ -761,8 +763,47 @@ static void KMSDRM_BlitSWBuffer(_THIS, drm_buffer *buf)
 		dst_y += pitch_dst;
 		dst_u += pitch_dst;
 		dst_v += pitch_dst;
-		src += pitch_src;
+		src += width;
 	}
+}
+
+static void KMSDRM_BlitSWBuffer16(_THIS, drm_buffer *buf)
+{
+	Uint32 pitch_dst = buf->req_create.pitch;
+	Uint32 width = this->hidden->w, height = this->hidden->h;
+	Uint8 *dst_y = (Uint8*)buf->map;
+	Uint8 *dst_u = dst_y + this->hidden->h * pitch_dst;
+	Uint8 *dst_v = dst_u + this->hidden->h * pitch_dst;
+	Uint16 *src = (Uint16 *)drm_shadow_buffer;
+	Uint32 yuv;
+	unsigned int i, j;
+
+	for (i = 0; i < height; i++) {
+		__builtin_prefetch(dst_y, 1, 0);
+		__builtin_prefetch(dst_u, 1, 0);
+		__builtin_prefetch(dst_v, 1, 0);
+		__builtin_prefetch(src, 0, 2);
+
+		for (j = 0; j < width; j++) {
+			yuv = drm_palette[src[j]];
+			dst_y[j] = yuv >> 16;
+			dst_u[j] = yuv >> 8;
+			dst_v[j] = yuv;
+		}
+
+		dst_y += pitch_dst;
+		dst_u += pitch_dst;
+		dst_v += pitch_dst;
+		src += width;
+	}
+}
+
+static inline void KMSDRM_BlitSWBuffer(_THIS, drm_buffer *buf)
+{
+	if ((this->hidden->bpp + 7) / 8 == 1)
+		KMSDRM_BlitSWBuffer8(this, buf);
+	else
+		KMSDRM_BlitSWBuffer16(this, buf);
 }
 
 static int KMSDRM_FlipHWSurface(_THIS, SDL_Surface *surface)
