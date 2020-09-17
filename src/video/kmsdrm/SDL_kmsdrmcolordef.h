@@ -26,7 +26,7 @@ extern drm_color_def KMSDRM_COLOR_XBGR15555;
 extern drm_color_def KMSDRM_COLOR_YUYV;
 
 /* Provides information on how to configure color format. */
-drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags);
+drm_color_def *get_drm_color_def(int depth, Uint32 flags);
 /* Provides necessary arguments for drm framebuffer creation */
 void get_framebuffer_args(const drm_color_def *def, unsigned int handle, unsigned int pitch,
     Uint16 height, Uint32 *handles, Uint32 *pitches, Uint32 *offsets);

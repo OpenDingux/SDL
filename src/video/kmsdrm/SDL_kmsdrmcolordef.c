@@ -33,13 +33,14 @@ MAKE_RGBA(XBGR1555, 16, 5, 5, 5, 0,  0,  5, 10,  0);
 MAKE_YUV(YUV444, 8, 3);
 
 /* Provides information on how to configure color format. */
-drm_color_def *get_drm_color_def(int depth, int isyuv, Uint32 flags)
+drm_color_def *get_drm_color_def(int depth, Uint32 flags)
 {
-    /** 
-     * TODO:: implement actual YUV rather than 8bpp emulation. Until then, 
-     * isyuv is left unused.
-     **/
-    if (flags & SDL_SWIZZLEBGR) {
+    if (flags & SDL_YUV444) {
+        switch(depth) {
+        case 24: return &KMSDRM_COLOR_YUV444;
+        default: return NULL;
+        }
+    } else if (flags & SDL_SWIZZLEBGR) {
         switch(depth) {
         /* case  8: return &KMSDRM_COLOR_YUV444; */
         case 16: return &KMSDRM_COLOR_BGR565;

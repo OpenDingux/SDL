@@ -145,6 +145,7 @@ typedef struct SDL_Surface {
 #define SDL_RESIZABLE	0x00000010	/**< This video mode may be resized */
 #define SDL_NOFRAME	0x00000020	/**< No window caption or edge frame */
 #define SDL_SWIZZLEBGR	0x00000040	/**< Video mode has BGR subpixel ordering (not RGB) */
+#define SDL_YUV444	0x00000080	/**< Video mode is multi-planar YUV 4:4:4 */
 /*@}*/
 
 /** Used internally (read-only) */

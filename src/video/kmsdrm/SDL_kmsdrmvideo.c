@@ -479,7 +479,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	}
 
 	// Get rounded bpp number for drm_mode_create_dumb.
-	const drm_color_def *color_def = get_drm_color_def(bpp, 0, flags);
+	const drm_color_def *color_def = get_drm_color_def(bpp, flags);
 	if ( !color_def ) {
 		SDL_SetError("Bad pixel format (%dbpp).\n", bpp);
 		goto setvidmode_fail;
