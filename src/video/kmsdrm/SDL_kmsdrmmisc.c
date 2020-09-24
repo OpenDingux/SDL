@@ -161,64 +161,6 @@ static int helper_add_property(_THIS, drmModeAtomicReq *req, struct drm_prop_arg
 	return 1;
 }
 
-Uint32 get_prop_id(_THIS, Uint32 obj_id, const char *prop_name)
-{
-	drmModeObjectProperties *props = NULL;
-	drmModePropertyRes **props_info = NULL;
-	drm_prop_arg p = {.obj_id = obj_id};
-	strncpy(p.name, prop_name, sizeof(p.name)-1);
-
-	// Try to acquire object
-	if ( (p.obj_type = get_prop_ptrs(this, &props, &props_info, &p)) == 0 ) {
-		SDL_SetError("No known properties for object %d.\n", p.obj_id);
-		return -1;
-	}
-
-	// If the specified object has no property, raise error.
-	if ( !props ) {
-		SDL_SetError("%s has no properties.\n", from_mode_object_type(p.obj_type));
-		return -1;
-	}
-
-	Uint32 idx;
-	if ( (idx = find_prop_info_idx(props, props_info, &p)) < 0 ) {
-		// If this isn't optional, do raise error.
-		SDL_SetError("%s has no property %s.\n", from_mode_object_type(p.obj_type),
-			p.name);
-		return -1;
-	}
-
-	return p.prop_id;
-}
-
-static int helper_get_property(_THIS, struct drm_prop_arg *p, Uint64 *val)
-{
-	drmModeObjectProperties *props = NULL;
-	drmModePropertyRes **props_info = NULL;
-	
-	// Try to acquire object
-	if ( (p->obj_type = get_prop_ptrs(this, &props, &props_info, p)) == 0 ) {
-		SDL_SetError("Could not find object.\n");
-		return 0;
-	}
-
-	// If the specified object has no property, raise error.
-	if ( !props || !props_info ) {
-		SDL_SetError("%s has no properties.\n", from_mode_object_type(p->obj_type));
-		return 0;
-	}
-
-	if ( (p->prop_id = find_prop_info_idx(props, props_info, p)) < 0 ) {
-		SDL_SetError("%s has no property %s.\n", from_mode_object_type(p->obj_type),
-			p->name);
-		return 0;
-	}
-
-	// Finally try getting the property
-	*val = props->prop_values[p->prop_id];
-	return 1;
-}
-
 int acquire_properties(_THIS, Uint32 id, Uint32 type)
 {
 	struct drm_prop_storage *store = calloc(1, sizeof(drm_prop_storage));
@@ -272,16 +214,6 @@ int add_property(_THIS, drmModeAtomicReq *req, uint32_t obj_id,
 	p.optional = opt;
 
 	return helper_add_property(this, req, &p);
-}
-
-int get_property(_THIS, uint32_t obj_id, const char *name, uint64_t *value)
-{
-	struct drm_prop_arg p;
-
-	p.obj_id = obj_id;
-	strncpy(p.name, name, sizeof(p.name)-1);
-	
-	return helper_get_property(this, &p, value);
 }
 
 int free_drm_prop_storage(_THIS)

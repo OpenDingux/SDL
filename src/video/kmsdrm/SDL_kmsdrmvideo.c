@@ -557,11 +557,6 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		goto setvidmode_fail_fbs;
 	}
 
-	// Acquire the prop_id necessary for flipping buffers
-	if ( (drm_fb_id_prop = get_prop_id(this, drm_active_pipe->plane, "FB_ID")) == -1 ) {
-		goto setvidmode_fail_fbs;
-	}
-
 	// Let SDL know about the created framebuffer
 	if ( ! SDL_ReallocFormat(current, bpp, color_def->r_mask, color_def->g_mask,
 	        color_def->b_mask, color_def->a_mask) ) {

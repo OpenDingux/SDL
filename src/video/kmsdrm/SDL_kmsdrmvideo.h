@@ -116,7 +116,6 @@ struct SDL_PrivateVideoData {
     drmModeAtomicReqPtr drm_req;
     drm_buffer buffers[3];
     Uint32 mode_blob_id;
-    Uint32 fb_id_prop;
     Uint32 front_buffer;
     Uint32 back_buffer;
     Uint32 queued_buffer;
@@ -146,7 +145,6 @@ struct SDL_PrivateVideoData {
 #define drm_first_prop_store (this->hidden->first_prop_store)
 #define drm_buffers          (this->hidden->buffers)
 #define drm_mode_blob_id     (this->hidden->mode_blob_id)
-#define drm_fb_id_prop       (this->hidden->fb_id_prop)
 #define drm_front_buffer     (this->hidden->front_buffer)
 #define drm_back_buffer      (this->hidden->back_buffer)
 #define drm_queued_buffer    (this->hidden->queued_buffer)
