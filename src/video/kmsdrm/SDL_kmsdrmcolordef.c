@@ -13,6 +13,7 @@
 
 /* Must be kept up-to-date with SDL_kmsdrmcolordef.h */
 /*       |   CODE |BPP| R| G| B| A| RS| GS| BS| AS| */
+MAKE_RGBA(C8,       8,  8, 8, 8, 0,  0,  0,  0,  0);
 MAKE_RGBA(XRGB8888, 32, 8, 8, 8, 0, 16,  8,  0,  0);
 MAKE_RGBA(RGB565,   16, 5, 6, 5, 0, 11,  5,  0,  0);
 MAKE_RGBA(XRGB1555, 16, 5, 5, 5, 0, 10,  5,  0,  0);
@@ -51,7 +52,7 @@ drm_color_def *get_drm_color_def(int depth, Uint32 flags)
         }
     } else {
         switch(depth) {
-        case  8: return &KMSDRM_COLOR_YUV444;
+        case  8: return &KMSDRM_COLOR_C8;
         case 16: return &KMSDRM_COLOR_RGB565;
         case 15: return &KMSDRM_COLOR_XRGB1555;
         case 24:
@@ -75,6 +76,7 @@ void get_framebuffer_args(const drm_color_def *def, unsigned int handle, unsigne
             offsets[1] = offsets[0] + pitch * height;
             offsets[2] = offsets[1] + pitch * height;
             break;
+        case DRM_FORMAT_C8:
         case DRM_FORMAT_RGB565:
         case DRM_FORMAT_XRGB1555:
         case DRM_FORMAT_XRGB8888:

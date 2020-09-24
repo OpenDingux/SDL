@@ -17,6 +17,7 @@ typedef struct drm_color_def {
 } drm_color_def;
 
 /* Must be kept up-to-date with SDL_kmsdrmcolordef.c */
+extern drm_color_def KMSDRM_COLOR_C8;
 extern drm_color_def KMSDRM_COLOR_XRGB88888;
 extern drm_color_def KMSDRM_COLOR_RGB565;
 extern drm_color_def KMSDRM_COLOR_XRGB15555;

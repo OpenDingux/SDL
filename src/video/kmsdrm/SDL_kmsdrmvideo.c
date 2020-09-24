@@ -257,6 +257,12 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 		drm_buffers[i].map = (void*)-1;
 	}
 
+	if (drmModeCreatePropertyBlob(drm_fd, drm_palette,
+				      sizeof(drm_palette), &drm_palette_blob_id)) {
+		SDL_SetError("Unable to create gamma LUT blob.\n");
+		goto vidinit_fail_fd;
+	}
+
 	KMSDRM_TripleBufferInit(this);
 
 	KMSDRM_InitInput(this);
@@ -363,7 +369,8 @@ static int KMSDRM_VideoModeOK(_THIS, int width, int height, int bpp, Uint32 flag
 }
 
 static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
-				int width, int height, int mode_width, int mode_height)
+				Uint32 crtc_id, int width, int height,
+				int mode_width, int mode_height, int bpp)
 {
 	unsigned int crtc_w, crtc_h;
 
@@ -403,6 +410,10 @@ static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
 		return 1;
 
 	if (!add_property(this, req, plane_id, "CRTC_H", 0, crtc_h))
+		return 1;
+
+	if (bpp == 8 &&
+	    !add_property(this, req, crtc_id, "GAMMA_LUT", 0, drm_palette_blob_id))
 		return 1;
 
 	return 0;
@@ -509,8 +520,8 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		attempt_add_prop2(this, req, pipe->plane, "SRC_W", 0, width << 16);
 		attempt_add_prop2(this, req, pipe->plane, "SRC_H", 0, height << 16);
 
-		if (KMSDRM_SetCrtcParams(this, req, pipe->plane, width, height,
-					 closest_mode->hdisplay, closest_mode->vdisplay)) {
+		if (KMSDRM_SetCrtcParams(this, req, pipe->plane, pipe->crtc, width, height,
+					 closest_mode->hdisplay, closest_mode->vdisplay, bpp)) {
 			fprintf(stderr, "Unable to set CRTC params: %s\n", strerror(errno));
 			goto setvidmode_fail_req2;
 		}
@@ -650,8 +661,10 @@ static int KMSDRM_TripleBufferingThread(void *d)
 		drmModeAtomicReqPtr req = drmModeAtomicDuplicate(this->hidden->drm_req);
 
 		if (KMSDRM_SetCrtcParams(this, req, drm_active_pipe->plane,
+					 drm_active_pipe->crtc,
 					 this->hidden->w, this->hidden->h,
-					 this->hidden->crtc_w, this->hidden->crtc_h))
+					 this->hidden->crtc_w, this->hidden->crtc_h,
+					 this->hidden->bpp))
 			fprintf(stderr, "Unable to set CRTC params: %s\n", strerror(errno));
 
 		/* flip display */
@@ -706,8 +719,10 @@ static int KMSDRM_FlipHWSurface(_THIS, SDL_Surface *surface)
 		drmModeAtomicReqPtr req = drmModeAtomicDuplicate(this->hidden->drm_req);
 
 		if (KMSDRM_SetCrtcParams(this, req, drm_active_pipe->plane,
+					 drm_active_pipe->crtc,
 					 this->hidden->w, this->hidden->h,
-					 this->hidden->crtc_w, this->hidden->crtc_h))
+					 this->hidden->crtc_w, this->hidden->crtc_h,
+					 this->hidden->bpp))
 			fprintf(stderr, "Unable to set CRTC params: %s\n", strerror(errno));
 
 		if (!add_property(this, req, drm_active_pipe->plane,
@@ -776,8 +791,10 @@ static void KMSDRM_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 	}
 
 	if (KMSDRM_SetCrtcParams(this, req, drm_active_pipe->plane,
+				 drm_active_pipe->crtc,
 				 this->hidden->w, this->hidden->h,
-				 this->hidden->crtc_w, this->hidden->crtc_h))
+				 this->hidden->crtc_w, this->hidden->crtc_h,
+				 this->hidden->bpp))
 		fprintf(stderr, "Unable to set CRTC params: %s\n", strerror(errno));
 
 	if (!add_property(this, req, drm_active_pipe->plane,
@@ -797,6 +814,28 @@ static void KMSDRM_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 
 int KMSDRM_SetColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 {
+	unsigned int i;
+	Uint32 blob_id, old_palette_id;
+
+	for (i = firstcolor; i < firstcolor + ncolors; i++) {
+		drm_palette[i] = (struct drm_color_lut){
+			.red = colors[i].r << 8,
+			.green = colors[i].g << 8,
+			.blue = colors[i].b << 8,
+		};
+	}
+
+	if (drmModeCreatePropertyBlob(drm_fd, drm_palette,
+				      sizeof(drm_palette), &blob_id)) {
+		fprintf(stderr, "Unable to create gamma LUT blob\n");
+		return 1;
+	}
+
+	old_palette_id = drm_palette_blob_id;
+	drm_palette_blob_id = blob_id;
+
+	drmModeDestroyPropertyBlob(drm_fd, old_palette_id);
+
 	return(0);
 }
 
@@ -809,6 +848,7 @@ void KMSDRM_VideoQuit(_THIS)
 	{
 		KMSDRM_TripleBufferQuit(this);
 		KMSDRM_ClearFramebuffers(this);
+		drmModeDestroyPropertyBlob(drm_fd, drm_palette_blob_id);
 		while (free_drm_prop_storage(this));
 		while (free_drm_pipe(this));
 

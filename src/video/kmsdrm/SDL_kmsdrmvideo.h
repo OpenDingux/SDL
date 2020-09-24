@@ -120,6 +120,8 @@ struct SDL_PrivateVideoData {
     Uint32 front_buffer;
     Uint32 back_buffer;
     Uint32 queued_buffer;
+    struct drm_color_lut palette[256];
+    Uint32 drm_gamma_lut_blob_id;
 
 	SDL_mutex *triplebuf_mutex;
 	SDL_cond *triplebuf_cond;
@@ -148,6 +150,8 @@ struct SDL_PrivateVideoData {
 #define drm_front_buffer     (this->hidden->front_buffer)
 #define drm_back_buffer      (this->hidden->back_buffer)
 #define drm_queued_buffer    (this->hidden->queued_buffer)
+#define drm_palette          (this->hidden->palette)
+#define drm_palette_blob_id  (this->hidden->drm_gamma_lut_blob_id)
 #define drm_active_pipe      (this->hidden->active_pipe)
 #define drm_req_destroy_dumb (this->hidden->req_destroy_dumb)
 #define drm_req_create       (this->hidden->req_create)
