@@ -182,21 +182,8 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 	drm_vid_modes[0] = NULL;
 
 	for (int plane_idx = 0; plane_idx < pres->count_planes; plane_idx++) {
-		Uint64 p_type;
 		drmModePlane *plane = drmModeGetPlane(drm_fd, pres->planes[plane_idx]);
 		if ( !plane ) {
-			continue;
-		}
-
-		if ( !get_property(this, plane->plane_id, "type", &p_type) ) {
-			SDL_SetError("Unable to query plane %d type.\n", plane->plane_id);
-			drmModeFreePlane(plane);
-			goto vidinit_fail_res;
-		}
-
-		if (p_type == DRM_PLANE_TYPE_OVERLAY) {
-			kmsdrm_dbg_printf("Skipping overlay plane %d.\n", plane->plane_id);
-			drmModeFreePlane(plane);
 			continue;
 		}
 
