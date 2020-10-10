@@ -67,6 +67,7 @@ typedef struct drm_pipe {
     Uint32 connector;
     drmModeModeInfo *modes;
     Uint32 mode_count;
+    Uint32 factor_w, factor_h;
     struct drm_pipe *next;
 } drm_pipe;
 

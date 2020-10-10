@@ -106,33 +106,6 @@ static int KMSDRM_Available(void)
 	return(1);
 }
 
-int KMSDRM_LookupVidMode(_THIS, int width, int height)
-{
-	for (int i = 0; i < drm_vid_mode_count; i++) {
-		if (drm_vid_modes[i]->w == width && drm_vid_modes[i]->h == height) {
-			return i;
-		}
-	}
-
-	return -1;
-}
-
-void KMSDRM_RegisterVidMode(_THIS, int width, int height)
-{
-	if (KMSDRM_LookupVidMode(this, width, height) >= 0) {
-		return;
-	}
-
-	drm_vid_mode_count++;
-	drm_vid_modes = SDL_realloc(drm_vid_modes, sizeof(*drm_vid_modes) * (drm_vid_mode_count + 1));
-	drm_vid_modes[drm_vid_mode_count] = NULL;
-	drm_vid_modes[drm_vid_mode_count-1] = SDL_calloc(1, sizeof(**drm_vid_modes));
-	drm_vid_modes[drm_vid_mode_count-1]->x = 0;
-	drm_vid_modes[drm_vid_mode_count-1]->y = 0;
-	drm_vid_modes[drm_vid_mode_count-1]->w = width;
-	drm_vid_modes[drm_vid_mode_count-1]->h = height;
-}
-
 int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 {
 	if ( (drm_fd = KMSDRM_OpenDevice()) < 0 ) {
@@ -193,36 +166,15 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 			drmModeCrtc *crtc = drmModeGetCrtc(drm_fd, res->crtcs[crtc_idx]);
 			drmModeEncoder *enc = drmModeGetEncoder(drm_fd, res->encoders[encoder_idx]);
 			drmModeConnector *conn = drmModeGetConnector(drm_fd, res->connectors[connector_idx]);
-			if ( crtc && enc && conn ) {				
-				// This is a suitable pathway, continue
-				if (plane->possible_crtcs & (1 << crtc_idx)) {
-					// This is a suitable pathway, continue
-					if (enc->possible_crtcs & (1 << crtc_idx)) {
-						// This is a suitable pathway, continue
-						if (conn->encoder_id == enc->encoder_id && 
-							conn->connection == DRM_MODE_CONNECTED && 
-							conn->count_modes > 0) {
-							// This is a complete, suitable pathway. save it.
-							save_drm_pipe(this, plane->plane_id, crtc->crtc_id, 
-								enc->encoder_id, conn->connector_id, conn->modes, conn->count_modes);
-							kmsdrm_dbg_printf("Supported modes:\n");
-							for (int i = 0; i < conn->count_modes; i++) {
-								KMSDRM_RegisterVidMode(this, conn->modes[i].hdisplay, conn->modes[i].vdisplay);
-
-								kmsdrm_dbg_printf(" * ");
-								dump_mode(&conn->modes[i]);
-							}
-							kmsdrm_dbg_printf("Supported formats:\n");
-							for (int i = 0; i < plane->count_formats; i++) {
-								kmsdrm_dbg_printf(" * %c%c%c%c\n", 
-									 plane->formats[i]        & 0xFF, 
-									(plane->formats[i] >> 8)  & 0xFF, 
-									(plane->formats[i] >> 16) & 0xFF, 
-									 plane->formats[i] >> 24);
-							}
-						}
-					}
-				}
+			if ( crtc && enc && conn &&
+			     (plane->possible_crtcs & (1 << crtc_idx)) &&
+			     (enc->possible_crtcs & (1 << crtc_idx)) &&
+			     conn->encoder_id == enc->encoder_id &&
+			     conn->connection == DRM_MODE_CONNECTED &&
+			     conn->count_modes > 0 ) {
+				// This is a complete, suitable pathway. save it.
+				save_drm_pipe(this, plane->plane_id, crtc->crtc_id,
+					      enc->encoder_id, conn);
 			}
 
 			if (crtc) drmModeFreeCrtc(crtc);
@@ -376,18 +328,22 @@ static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
 
 	switch (this->hidden->scaling_mode) {
 	case DRM_SCALING_MODE_ASPECT_RATIO:
-		if (width * mode_height > height * mode_width) {
+		if (width * mode_height * drm_active_pipe->factor_w >
+		    height * mode_width * drm_active_pipe->factor_h) {
 			crtc_w = mode_width;
-			crtc_h = crtc_w * height / width;
+			crtc_h = drm_active_pipe->factor_h * crtc_w * height /
+				(width * drm_active_pipe->factor_w);
 		} else {
 			crtc_h = mode_height;
-			crtc_w = crtc_h * width / height;
+			crtc_w = drm_active_pipe->factor_w * crtc_h * width /
+				(height * drm_active_pipe->factor_h);
 		}
 		break;
 	case DRM_SCALING_MODE_INTEGER_SCALED:
-		if (width < mode_width && height < mode_height) {
-			crtc_w = width * (mode_width / width);
-			crtc_h = height * (mode_height / height);
+		if (width < mode_width / drm_active_pipe->factor_w &&
+		    height < mode_height / drm_active_pipe->factor_h) {
+			crtc_w = width * (mode_width / (width * drm_active_pipe->factor_w));
+			crtc_h = height * (mode_height / (height * drm_active_pipe->factor_h));
 			break;
 		}
 		/* fall-through */
@@ -520,6 +476,8 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 		attempt_add_prop2(this, req, pipe->plane, "SRC_W", 0, width << 16);
 		attempt_add_prop2(this, req, pipe->plane, "SRC_H", 0, height << 16);
 
+		drm_active_pipe = pipe;
+
 		if (KMSDRM_SetCrtcParams(this, req, pipe->plane, pipe->crtc, width, height,
 					 closest_mode->hdisplay, closest_mode->vdisplay, bpp)) {
 			fprintf(stderr, "Unable to set CRTC params: %s\n", strerror(errno));
@@ -532,8 +490,6 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 
 		// Modeset successful, remember necessary data
 		if ( !rc ) {
-			drm_active_pipe = pipe;
-
 			this->hidden->w = width;
 			this->hidden->h = height;
 			this->hidden->crtc_w = closest_mode->hdisplay;
@@ -544,6 +500,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 			kmsdrm_dbg_printf("SetVideoMode failed: %s, retrying.\n", strerror(errno));
 			drmModeAtomicFree(this->hidden->drm_req);
 			this->hidden->drm_req = NULL;
+			drm_active_pipe = NULL;
 		}
 
 		// Modeset failed, clean up request and related objects

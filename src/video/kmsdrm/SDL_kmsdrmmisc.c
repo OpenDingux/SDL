@@ -55,7 +55,34 @@ static const char *from_mode_object_type(Uint32 type)
 	}
 }
 
-int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 conn, drmModeModeInfo *modes, int mode_count)
+int KMSDRM_LookupVidMode(_THIS, int width, int height)
+{
+	for (int i = 0; i < drm_vid_mode_count; i++) {
+		if (drm_vid_modes[i]->w == width && drm_vid_modes[i]->h == height) {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+void KMSDRM_RegisterVidMode(_THIS, int width, int height)
+{
+	if (KMSDRM_LookupVidMode(this, width, height) >= 0) {
+		return;
+	}
+
+	drm_vid_mode_count++;
+	drm_vid_modes = SDL_realloc(drm_vid_modes, sizeof(*drm_vid_modes) * (drm_vid_mode_count + 1));
+	drm_vid_modes[drm_vid_mode_count] = NULL;
+	drm_vid_modes[drm_vid_mode_count-1] = SDL_calloc(1, sizeof(**drm_vid_modes));
+	drm_vid_modes[drm_vid_mode_count-1]->x = 0;
+	drm_vid_modes[drm_vid_mode_count-1]->y = 0;
+	drm_vid_modes[drm_vid_mode_count-1]->w = width;
+	drm_vid_modes[drm_vid_mode_count-1]->h = height;
+}
+
+int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, drmModeConnector *conn)
 {
 	drm_pipe *pipe = calloc(1, sizeof(*pipe));
 	if ( !pipe ) {
@@ -66,25 +93,53 @@ int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 conn, drm
 	pipe->plane = plane;
 	pipe->crtc = crtc;
 	pipe->encoder = enc;
-	pipe->connector = conn;
-	pipe->modes = SDL_calloc(mode_count, sizeof(*pipe->modes));
-	pipe->mode_count = mode_count;
-	memcpy(pipe->modes, modes, sizeof(*modes) * mode_count);
+	pipe->connector = conn->connector_id;
+	pipe->modes = SDL_calloc(conn->count_modes, sizeof(*pipe->modes));
+	pipe->mode_count = conn->count_modes;
+	memcpy(pipe->modes, conn->modes, sizeof(*pipe->modes) * conn->count_modes);
 
-    // We want to remember the pipe order, so save to last.
+	pipe->factor_w = pipe->factor_h = 1;
+
+	if (conn->count_modes) {
+		float ppmm_w = (conn->modes[0].hdisplay << 16) / conn->mmWidth;
+		float ppmm_h = (conn->modes[0].vdisplay << 16) / conn->mmHeight;
+
+		if ((int)nearbyintf(ppmm_w / ppmm_h) > 1)
+			pipe->factor_w = (int)nearbyintf(ppmm_w / ppmm_h);
+		else if ((int)nearbyintf(ppmm_h / ppmm_w) > 1)
+			pipe->factor_h = (int)nearbyintf(ppmm_h / ppmm_w);
+	}
+
+	for (unsigned int i = 0; i < conn->count_modes; i++) {
+		KMSDRM_RegisterVidMode(this,
+				       conn->modes[i].hdisplay,
+				       conn->modes[i].vdisplay);
+
+		/* If we have a screen with non-square pixels, also register a
+		 * mode with the resolution adapted to match the aspect ratio
+		 * if the panel had square pixels. */
+		if (pipe->factor_w != 1 || pipe->factor_h != 1) {
+			KMSDRM_RegisterVidMode(this,
+					       conn->modes[i].hdisplay / pipe->factor_w,
+					       conn->modes[i].vdisplay / pipe->factor_h);
+		}
+	}
+
+	// We want to remember the pipe order, so save to last.
 	if (drm_first_pipe) {
-        drm_pipe *pipe_f = drm_first_pipe;
-        while (pipe_f->next) {
-            pipe_f = pipe_f->next;
-        }
+		drm_pipe *pipe_f = drm_first_pipe;
+		while (pipe_f->next) {
+			pipe_f = pipe_f->next;
+		}
 
-        pipe_f->next = pipe;
-    }
-    else {
-        drm_first_pipe = pipe;
-    }
-    
-	kmsdrm_dbg_printf("Annotating pipe p: %d cr: %d e: %d con: %d\n", plane, crtc, enc, conn);
+		pipe_f->next = pipe;
+	}
+	else {
+		drm_first_pipe = pipe;
+	}
+
+	kmsdrm_dbg_printf("Annotating pipe p: %d cr: %d e: %d con: %d\n",
+			  plane, crtc, enc, conn->connector_id);
 	return 1;
 }
 

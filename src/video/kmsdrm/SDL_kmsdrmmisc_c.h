@@ -4,7 +4,7 @@
 #define _SDL_kmsdrmmisc_h
 
 void dump_mode(drmModeModeInfo *mode);
-int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, Uint32 conn, drmModeModeInfo *modes, int mode_count);
+int save_drm_pipe(_THIS, Uint32 plane, Uint32 crtc, Uint32 enc, drmModeConnector *conn);
 Uint32 get_prop_id(_THIS, Uint32 obj_id, const char *prop_name);
 int acquire_properties(_THIS, Uint32 id, Uint32 type);
 int get_property(_THIS, uint32_t obj_id, const char *name, uint64_t *value);
