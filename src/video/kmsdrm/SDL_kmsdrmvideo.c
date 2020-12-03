@@ -537,10 +537,12 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	// Let SDL know what type of surface this is. In case the user asks for a
 	// SDL_SWSURFACE video mode, SDL will silently create a shadow buffer
 	// as an intermediary.
-	current->flags =
-		         SDL_HWSURFACE  |
-		(flags & SDL_HWPALETTE) |
+	current->flags = SDL_HWSURFACE  |
 		(flags & SDL_TRIPLEBUF); /* SDL_TRIPLEBUF implies SDL_DOUBLEBUF */
+
+	/* We do always want the hardware palette if 8bpp is selected */
+	if (bpp == 8)
+		current->flags |= SDL_HWPALETTE;
 
 	if ( (flags & SDL_TRIPLEBUF) == SDL_TRIPLEBUF ) {
 		SDL_LockMutex(drm_triplebuf_mutex);
