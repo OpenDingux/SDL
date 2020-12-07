@@ -340,10 +340,12 @@ static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
 		}
 		break;
 	case DRM_SCALING_MODE_INTEGER_SCALED:
-		if (width < mode_width / drm_active_pipe->factor_w &&
-		    height < mode_height / drm_active_pipe->factor_h) {
-			crtc_w = width * (mode_width / (width * drm_active_pipe->factor_w));
-			crtc_h = height * (mode_height / (height * drm_active_pipe->factor_h));
+		if (width <= mode_width / drm_active_pipe->factor_w &&
+		    height <= mode_height / drm_active_pipe->factor_h) {
+			crtc_w = width * drm_active_pipe->factor_w *
+				((mode_width / drm_active_pipe->factor_w) / width);
+			crtc_h = height * drm_active_pipe->factor_h *
+				((mode_height / drm_active_pipe->factor_h) / height);
 			break;
 		}
 		/* fall-through */
