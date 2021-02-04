@@ -13,5 +13,7 @@ int find_property(_THIS, uint32_t obj_id, const char *name);
 int free_drm_prop_storage(_THIS);
 int free_drm_pipe(_THIS);
 drmModeModeInfo *find_pipe_closest_refresh(drm_pipe *pipe, float refresh);
+drmModeModeInfo *find_pipe_closest_res(drm_pipe *pipe, int width, int height);
+drmModeModeInfo *find_closest_res(_THIS, int width, int height);
 
 #endif /* _SDL_kmsdrmmisc_h */

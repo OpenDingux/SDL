@@ -377,9 +377,13 @@ static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
 	return 0;
 }
 
-SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
-				int width, int height, int bpp, Uint32 flags)
+static SDL_Surface *KMSDRM_SetVideoMode2(_THIS, SDL_Surface *current,
+					 int width, int height, int bpp,
+					 Uint32 flags, int recursive)
 {
+	SDL_Surface *new_surface;
+	drmModeModeInfo *closest_mode;
+
 	// Lock the event thread, in multi-threading environments
 	SDL_Lock_EventThread();
 
@@ -441,7 +445,7 @@ SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
 	drmModeAtomicReqPtr req;
 
 	for (drm_pipe *pipe = drm_first_pipe; pipe; pipe = pipe->next) {
-		drmModeModeInfo *closest_mode = find_pipe_closest_refresh(pipe, refresh_rate);
+		closest_mode = find_pipe_closest_refresh(pipe, refresh_rate);
 
 		// Use the connector's preferred mode first.
 		drmModeCreatePropertyBlob(drm_fd, closest_mode, sizeof(*closest_mode), &drm_mode_blob_id);
@@ -571,7 +575,37 @@ setvidmode_fail_fbs:
 	KMSDRM_ClearFramebuffers(this);
 setvidmode_fail:
 	SDL_Unlock_EventThread();
+
+	if ((flags & (SDL_TRIPLEBUF | SDL_HWSURFACE)) != 0 || bpp != 32) {
+		Uint32 new_flags = flags & ~(SDL_TRIPLEBUF | SDL_HWSURFACE);
+
+		/* Try again, with a standard bpp and SWSURFACE */
+		new_surface = KMSDRM_SetVideoMode2(this, current, width, height,
+						   32, new_flags, 1);
+		if (new_surface)
+			return new_surface;
+	} else if (!recursive) {
+		/* Try again, but request the closest resolution possible to the requested one */
+		closest_mode = find_closest_res(this, width, height);
+		if (closest_mode &&
+		    (closest_mode->hdisplay != width || closest_mode->vdisplay != height)) {
+			new_surface = KMSDRM_SetVideoMode2(this, current,
+							   closest_mode->hdisplay,
+							   closest_mode->vdisplay,
+							   bpp, flags, 1);
+			if (new_surface)
+				return new_surface;
+		}
+	}
+
+	/* Else we can't do much */
 	return NULL;
+}
+
+SDL_Surface *KMSDRM_SetVideoMode(_THIS, SDL_Surface *current,
+				int width, int height, int bpp, Uint32 flags)
+{
+	return KMSDRM_SetVideoMode2(this, current, width, height, bpp, flags, 0);
 }
 
 /* We don't actually allow hardware surfaces other than the main one */

@@ -7,6 +7,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <math.h>
 
@@ -316,4 +317,46 @@ drmModeModeInfo *find_pipe_closest_refresh(drm_pipe *pipe, float refresh)
 	}
 
 	return first;
+}
+
+drmModeModeInfo *find_pipe_closest_res(drm_pipe *pipe, int width, int height)
+{
+	int dw, dh, min_w = INT_MAX, min_h = INT_MAX;
+	drmModeModeInfo *best = NULL;
+	unsigned int i;
+
+	for (i = 0; i < pipe->mode_count; i++) {
+		dw = pipe->modes[i].hdisplay - width;
+		dh = pipe->modes[i].vdisplay - height;
+
+		if (dw >= 0 && dh >= 0 && min_w >= dw && min_h >= dh) {
+			min_w = dw;
+			min_h = dh;
+			best = &pipe->modes[i];
+		}
+	}
+
+	return best;
+}
+
+drmModeModeInfo *find_closest_res(_THIS, int width, int height)
+{
+	int dw, dh, min_w = INT_MAX, min_h = INT_MAX;
+	drmModeModeInfo *p, *best = NULL;
+
+	for (drm_pipe *other = drm_first_pipe; other; other = other->next) {
+		p = find_pipe_closest_res(other, width, height);
+		if (!p)
+			continue;
+
+		dw = p->hdisplay - width;
+		dh = p->vdisplay - height;
+		if (min_w >= dw && min_h >= dh) {
+			min_w = dw;
+			min_h = dh;
+			best = p;
+		}
+	}
+
+	return best;
 }
