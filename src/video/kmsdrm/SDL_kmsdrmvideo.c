@@ -324,9 +324,13 @@ static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
 				Uint32 crtc_id, int width, int height,
 				int mode_width, int mode_height, int bpp)
 {
-	unsigned int crtc_w, crtc_h;
+	unsigned int crtc_w, crtc_h, scaling_mode = this->hidden->scaling_mode;
+	const char *env_mode = getenv("SDL_VIDEO_KMSDRM_SCALING_MODE");
 
-	switch (this->hidden->scaling_mode) {
+	if (env_mode)
+		scaling_mode = atoi(env_mode);
+
+	switch (scaling_mode) {
 	case DRM_SCALING_MODE_ASPECT_RATIO:
 		if (width * mode_height * drm_active_pipe->factor_w >
 		    height * mode_width * drm_active_pipe->factor_h) {
@@ -353,8 +357,8 @@ static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
 		crtc_w = mode_width;
 		crtc_h = mode_height;
 		break;
-	case DRM_SCALING_MODE_END:
-		fprintf(stderr, "Invalid mode %d\n", this->hidden->scaling_mode);
+	default:
+		fprintf(stderr, "Invalid mode %d\n", scaling_mode);
 		return 1;
 	}
 
