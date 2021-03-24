@@ -324,14 +324,12 @@ static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
 				Uint32 crtc_id, int width, int height,
 				int mode_width, int mode_height, int bpp)
 {
-	unsigned int crtc_w, crtc_h, scaling_mode = this->hidden->scaling_mode, sharpness = 8;
+	unsigned int crtc_w, crtc_h, scaling_mode = this->hidden->scaling_mode, sharpness;
 	const char *env_mode = getenv("SDL_VIDEO_KMSDRM_SCALING_MODE");
 	const char *env_sharpness = getenv("SDL_VIDEO_KMSDRM_SCALING_SHARPNESS");
 
 	if (env_mode)
 		scaling_mode = atoi(env_mode);
-	if (env_sharpness)
-		sharpness = atoi(env_sharpness);
 
 	switch (scaling_mode) {
 	case DRM_SCALING_MODE_ASPECT_RATIO:
@@ -365,8 +363,12 @@ static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
 		return 1;
 	}
 
-	if (!add_property(this, req, plane_id, "sharpness", 1, sharpness))
-		return 1;
+	if (env_sharpness) {
+		sharpness = atoi(env_sharpness);
+
+		if (!add_property(this, req, plane_id, "sharpness", 1, sharpness))
+			return 1;
+	}
 
 	if (!add_property(this, req, plane_id, "CRTC_X", 0, (mode_width - crtc_w) / 2))
 		return 1;
