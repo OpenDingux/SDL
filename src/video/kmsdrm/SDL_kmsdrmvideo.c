@@ -324,7 +324,8 @@ static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
 				Uint32 crtc_id, int width, int height,
 				int mode_width, int mode_height, int bpp)
 {
-	unsigned int crtc_w, crtc_h, scaling_mode = this->hidden->scaling_mode, sharpness;
+	unsigned int crtc_w, crtc_h, scaling_mode = this->hidden->scaling_mode, sharpness,
+		     ratio_w, ratio_h, ratio;
 	const char *env_mode = getenv("SDL_VIDEO_KMSDRM_SCALING_MODE");
 	const char *env_sharpness = getenv("SDL_VIDEO_KMSDRM_SCALING_SHARPNESS");
 
@@ -347,10 +348,12 @@ static int KMSDRM_SetCrtcParams(_THIS, drmModeAtomicReqPtr req, Uint32 plane_id,
 	case DRM_SCALING_MODE_INTEGER_SCALED:
 		if (width <= mode_width / drm_active_pipe->factor_w &&
 		    height <= mode_height / drm_active_pipe->factor_h) {
-			crtc_w = width * drm_active_pipe->factor_w *
-				((mode_width / drm_active_pipe->factor_w) / width);
-			crtc_h = height * drm_active_pipe->factor_h *
-				((mode_height / drm_active_pipe->factor_h) / height);
+			ratio_w = ((mode_width / drm_active_pipe->factor_w) / width);
+			ratio_h = ((mode_height / drm_active_pipe->factor_h) / height);
+			ratio = ratio_w < ratio_h ? ratio_w : ratio_h;
+
+			crtc_w = width * drm_active_pipe->factor_w * ratio;
+			crtc_h = height * drm_active_pipe->factor_h * ratio;
 			break;
 		}
 		/* fall-through */
