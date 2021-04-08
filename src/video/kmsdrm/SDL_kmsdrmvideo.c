@@ -315,6 +315,16 @@ static void KMSDRM_ClearFramebuffers(_THIS)
 	}
 }
 
+static void KMSDRM_ClearShadowbuffer(_THIS)
+{
+	if ( drm_shadow_buffer ) {
+		free(drm_shadow_buffer);
+		free(drm_yuv_palette);
+		drm_shadow_buffer = NULL;
+		drm_yuv_palette = NULL;
+	}
+}
+
 static int KMSDRM_VideoModeOK(_THIS, int width, int height, int bpp, Uint32 flags)
 {
 	return (bpp); /* TODO: check that the resolution is really OK */
@@ -413,6 +423,7 @@ static SDL_Surface *KMSDRM_SetVideoMode2(_THIS, SDL_Surface *current,
 		}
 
 		drm_active_pipe = NULL;
+		KMSDRM_ClearShadowbuffer(this);
 		KMSDRM_ClearFramebuffers(this);
 		drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
 		drmModeAtomicFree(this->hidden->drm_req);
@@ -433,6 +444,16 @@ static SDL_Surface *KMSDRM_SetVideoMode2(_THIS, SDL_Surface *current,
 	drm_back_buffer = 1;
 	drm_front_buffer = 0;
 	drm_queued_buffer = 2;	
+
+	if (bpp == 8 && (flags & SDL_YUV444)) {
+		/**
+		 * Emulate paletted video mode with a YUV surface. For this,
+		 * it's necessary to create a shadow one here instead of
+		 * letting SDL handle it.
+		 **/
+		drm_shadow_buffer = calloc(width * height, (bpp + 7) / 8);
+		drm_yuv_palette = calloc(1 << bpp, sizeof(*drm_yuv_palette));
+	}
 
 	// Get rounded bpp number for drm_mode_create_dumb.
 	const drm_color_def *color_def = get_drm_color_def(bpp, flags);
@@ -546,10 +567,14 @@ static SDL_Surface *KMSDRM_SetVideoMode2(_THIS, SDL_Surface *current,
 		goto setvidmode_fail_fbs;
 	}
 
-	if ( flags & (SDL_DOUBLEBUF | SDL_TRIPLEBUF) ) {
-		current->pixels = drm_buffers[drm_back_buffer].map;
+	if ( !drm_shadow_buffer ) {
+		if ( flags & (SDL_DOUBLEBUF | SDL_TRIPLEBUF) ) {
+			current->pixels = drm_buffers[drm_back_buffer].map;
+		} else {
+			current->pixels = drm_buffers[drm_front_buffer].map;
+		}
 	} else {
-		current->pixels = drm_buffers[drm_front_buffer].map;
+		current->pixels = drm_shadow_buffer;
 	}
 
 	current->w = width;
@@ -591,11 +616,18 @@ setvidmode_fail_req:
 	drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
 	drm_mode_blob_id = -1;
 setvidmode_fail_fbs:
+	KMSDRM_ClearShadowbuffer(this);
 	KMSDRM_ClearFramebuffers(this);
 setvidmode_fail:
 	SDL_Unlock_EventThread();
 
-	if ((flags & (SDL_TRIPLEBUF | SDL_HWSURFACE)) != 0 || bpp != 32) {
+	if (!(flags & SDL_YUV444) && bpp == 8) {
+		/* Try again, with RGB 8bpp -> YUV444 emulation */
+		new_surface = KMSDRM_SetVideoMode2(this, current, width, height,
+						   8, flags | SDL_YUV444, 1);
+		if (new_surface)
+			return new_surface;
+	} else if ((flags & (SDL_TRIPLEBUF | SDL_HWSURFACE)) != 0 || bpp != 32) {
 		Uint32 new_flags = flags & ~(SDL_TRIPLEBUF | SDL_HWSURFACE);
 
 		/* Try again, with a standard bpp and SWSURFACE */
@@ -718,10 +750,53 @@ static void KMSDRM_TripleBufferQuit(_THIS)
 	SDL_DestroyCond(drm_triplebuf_cond);
 }
 
+static void KMSDRM_render_yuv(const Uint8 *src, Uint32 *dst_y,
+			      const Uint32 *palette, unsigned int nb_pixels)
+{
+	const Uint32 *src_w = (const Uint32 *)src;
+	Uint32 *dst_u = dst_y + nb_pixels / 4;
+	Uint32 *dst_v = dst_y + nb_pixels / 2;
+	unsigned int i;
+
+	for (i = 0; i < nb_pixels / 4; i++) {
+		Uint32 px3, px2, px1, px0, pixels;
+
+		pixels = *src_w++;
+		px0 = palette[pixels & 0xff];
+		px1 = palette[(pixels >> 8) & 0xff];
+		px2 = palette[(pixels >> 16) & 0xff];
+		px3 = palette[pixels >> 24];
+
+		*dst_y++ = ((px3 & 0xff0000) << 8) |
+			(px2 & 0xff0000) |
+			((px1 & 0xff0000) >> 8) |
+			((px0 & 0xff0000) >> 16);
+		*dst_u++ = ((px3 & 0xff00) << 16) |
+			((px2 & 0xff00) << 8) |
+			(px1 & 0xff00) |
+			((px0 & 0xff00) >> 8);
+		*dst_v++ = ((px3 & 0xff) << 24) |
+			((px2 & 0xff) << 16) |
+			((px1 & 0xff) << 8) |
+			(px0 & 0xff);
+	}
+}
+
+static void KMSDRM_BlitSWBuffer(_THIS, drm_buffer *buf)
+{
+	KMSDRM_render_yuv(drm_shadow_buffer, buf->map, drm_yuv_palette,
+			  this->hidden->w * this->hidden->h);
+}
+
 static int KMSDRM_FlipHWSurface(_THIS, SDL_Surface *surface)
 {
 	if ( !drm_active_pipe )
 		return -2;
+
+	// Flip the shadow buffer if present.
+	if ( drm_shadow_buffer ) {
+		KMSDRM_BlitSWBuffer(this, &drm_buffers[drm_back_buffer]);
+	}
 
 	// Either wait for VSync or for buffer acquire
 	if ( (surface->flags & SDL_TRIPLEBUF) == SDL_DOUBLEBUF ) {
@@ -752,7 +827,10 @@ static int KMSDRM_FlipHWSurface(_THIS, SDL_Surface *surface)
 	drm_front_buffer = drm_back_buffer;
 	drm_back_buffer = prev_buffer;
 
-	surface->pixels = drm_buffers[drm_back_buffer].map;
+	// Expose the new buffer if necessary
+	if ( !drm_shadow_buffer ) {
+		surface->pixels = drm_buffers[drm_back_buffer].map;
+	}
 
 	if ( (surface->flags & SDL_TRIPLEBUF) == SDL_TRIPLEBUF ) {
 		SDL_CondSignal(drm_triplebuf_cond);
@@ -769,6 +847,15 @@ static void KMSDRM_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 	unsigned int i;
 	Uint32 blob_id;
 	int ret;
+
+	/**
+	 * When double and triple buffering aren't enabled, it is necessary to
+	 * blit from the shadow to the front buffer here manually.
+	 * Otherwise, we will do this on KMSDRM_FlipHWSurface instead.
+	 **/
+	if ( drm_shadow_buffer && !(this->visible->flags & SDL_TRIPLEBUF) ) {
+		KMSDRM_BlitSWBuffer(this, &drm_buffers[drm_front_buffer]);
+	}
 
 	/**
 	 * this->hidden->drm_req is NULL - SDL_SetVideoMode must be called
@@ -821,29 +908,52 @@ static void KMSDRM_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 	drmModeAtomicFree(req);
 }
 
+#define U1616(val) ((Uint32)(val * (float)(1<<16)))
+
 int KMSDRM_SetColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 {
 	unsigned int i;
 	Uint32 blob_id, old_palette_id;
+	if ( drm_yuv_palette ) {
+		/**
+		 * For devices without support for XRGB modes on the IPU such as
+		 * ones powered by older JZ47xx SoCs, we're going to emulate
+		 * 8bpp modes with YUV surfaces. For this we need to convert the
+		 * incoming palettes to the YCbCr Rec. 601 full swing
+		 * equivalents.
+		 **/
 
-	for (i = firstcolor; i < firstcolor + ncolors; i++) {
-		drm_palette[i] = (struct drm_color_lut){
-			.red = colors[i].r << 8,
-			.green = colors[i].g << 8,
-			.blue = colors[i].b << 8,
-		};
+		for (int i = firstcolor; i < firstcolor + ncolors; i++) {
+			Uint8 r = colors[i].r;
+			Uint8 g = colors[i].g;
+			Uint8 b = colors[i].b;
+			Uint8 Yx = (U1616(  0) + U1616(0.2999f)   * r + U1616(0.587f)    * g + U1616(0.114f)    * b) >> 16;
+			Uint8 Cb = (U1616(128) - U1616(0.168736f) * r - U1616(0.331264f) * g + U1616(0.5f)      * b) >> 16;
+			Uint8 Cr = (U1616(128) + U1616(0.5f)      * r - U1616(0.418688f) * g - U1616(0.081312f) * b) >> 16;
+
+			/* [31:0] X:Y:Cb:Cr 8:8:8:8 little endian */
+			drm_yuv_palette[i] = (Yx << 16) | (Cb << 8) | Cr;
+		}
+	} else {
+		for (i = firstcolor; i < firstcolor + ncolors; i++) {
+			drm_palette[i] = (struct drm_color_lut){
+				.red = colors[i].r << 8,
+				.green = colors[i].g << 8,
+				.blue = colors[i].b << 8,
+			};
+		}
+
+		if (drmModeCreatePropertyBlob(drm_fd, drm_palette,
+					      sizeof(drm_palette), &blob_id)) {
+			fprintf(stderr, "Unable to create gamma LUT blob\n");
+			return 0;
+		}
+
+		old_palette_id = drm_palette_blob_id;
+		drm_palette_blob_id = blob_id;
+
+		drmModeDestroyPropertyBlob(drm_fd, old_palette_id);
 	}
-
-	if (drmModeCreatePropertyBlob(drm_fd, drm_palette,
-				      sizeof(drm_palette), &blob_id)) {
-		fprintf(stderr, "Unable to create gamma LUT blob\n");
-		return 0;
-	}
-
-	old_palette_id = drm_palette_blob_id;
-	drm_palette_blob_id = blob_id;
-
-	drmModeDestroyPropertyBlob(drm_fd, old_palette_id);
 
 	return(1);
 }
@@ -856,6 +966,7 @@ void KMSDRM_VideoQuit(_THIS)
 	if (this->screen->pixels != NULL)
 	{
 		KMSDRM_TripleBufferQuit(this);
+		KMSDRM_ClearShadowbuffer(this);
 		KMSDRM_ClearFramebuffers(this);
 		drmModeDestroyPropertyBlob(drm_fd, drm_palette_blob_id);
 		while (free_drm_prop_storage(this));

@@ -110,6 +110,7 @@ struct SDL_PrivateVideoData {
 	Uint32 size;
 	Uint32 handle;
 	void *map;
+    Uint8 *shadow_buffer;
 
     drm_pipe *first_pipe;
     drm_pipe *active_pipe;
@@ -120,6 +121,7 @@ struct SDL_PrivateVideoData {
     Uint32 front_buffer;
     Uint32 back_buffer;
     Uint32 queued_buffer;
+    Uint32 *yuv_palette;
     struct drm_color_lut palette[256];
     Uint32 drm_gamma_lut_blob_id;
 
@@ -142,6 +144,7 @@ struct SDL_PrivateVideoData {
 #define drm_size             (this->hidden->size)
 #define drm_handle           (this->hidden->handle)
 #define drm_map              (this->hidden->map)
+#define drm_shadow_buffer    (this->hidden->shadow_buffer)
 #define drm_first_pipe       (this->hidden->first_pipe)
 #define drm_first_prop_store (this->hidden->first_prop_store)
 #define drm_buffers          (this->hidden->buffers)
@@ -149,6 +152,7 @@ struct SDL_PrivateVideoData {
 #define drm_front_buffer     (this->hidden->front_buffer)
 #define drm_back_buffer      (this->hidden->back_buffer)
 #define drm_queued_buffer    (this->hidden->queued_buffer)
+#define drm_yuv_palette      (this->hidden->yuv_palette)
 #define drm_palette          (this->hidden->palette)
 #define drm_palette_blob_id  (this->hidden->drm_gamma_lut_blob_id)
 #define drm_active_pipe      (this->hidden->active_pipe)

@@ -42,6 +42,7 @@ drm_color_def *get_drm_color_def(int depth, Uint32 flags)
 {
     if (flags & SDL_YUV444) {
         switch(depth) {
+        case 8: return &KMSDRM_COLOR_YUV444;
         case 24: return &KMSDRM_COLOR_YUV444;
         default: return NULL;
         }
