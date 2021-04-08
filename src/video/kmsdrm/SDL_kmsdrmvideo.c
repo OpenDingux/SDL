@@ -837,7 +837,7 @@ int KMSDRM_SetColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 	if (drmModeCreatePropertyBlob(drm_fd, drm_palette,
 				      sizeof(drm_palette), &blob_id)) {
 		fprintf(stderr, "Unable to create gamma LUT blob\n");
-		return 1;
+		return 0;
 	}
 
 	old_palette_id = drm_palette_blob_id;
@@ -845,7 +845,7 @@ int KMSDRM_SetColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 
 	drmModeDestroyPropertyBlob(drm_fd, old_palette_id);
 
-	return(0);
+	return(1);
 }
 
 /* Note:  If we are terminated, this could be called in the middle of
