@@ -923,7 +923,7 @@ int KMSDRM_SetColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 		 * equivalents.
 		 **/
 
-		for (int i = firstcolor; i < firstcolor + ncolors; i++) {
+		for (int i = 0; i < ncolors; i++) {
 			Uint8 r = colors[i].r;
 			Uint8 g = colors[i].g;
 			Uint8 b = colors[i].b;
@@ -932,11 +932,11 @@ int KMSDRM_SetColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 			Uint8 Cr = (U1616(128) + U1616(0.5f)      * r - U1616(0.418688f) * g - U1616(0.081312f) * b) >> 16;
 
 			/* [31:0] X:Y:Cb:Cr 8:8:8:8 little endian */
-			drm_yuv_palette[i] = (Yx << 16) | (Cb << 8) | Cr;
+			drm_yuv_palette[firstcolor + i] = (Yx << 16) | (Cb << 8) | Cr;
 		}
 	} else {
-		for (i = firstcolor; i < firstcolor + ncolors; i++) {
-			drm_palette[i] = (struct drm_color_lut){
+		for (i = 0; i < ncolors; i++) {
+			drm_palette[firstcolor + i] = (struct drm_color_lut){
 				.red = colors[i].r << 8,
 				.green = colors[i].g << 8,
 				.blue = colors[i].b << 8,
