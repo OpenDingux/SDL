@@ -976,6 +976,7 @@ void KMSDRM_VideoQuit(_THIS)
 	}
 
 	KMSDRM_ExitInput(this);
+	close(drm_fd);
 }
 
 static SDL_VideoDevice *KMSDRM_CreateDevice(int devindex)
