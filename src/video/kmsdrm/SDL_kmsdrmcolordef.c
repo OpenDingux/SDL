@@ -4,7 +4,7 @@
 #include "SDL_kmsdrmcolordef.h"
 
 #define MAKE_RGBA(type, bpp, rbits, gbits, bbits, abits, rsh, gsh, bsh, ash) \
-    drm_color_def KMSDRM_COLOR_##type = { \
+    static const drm_color_def KMSDRM_COLOR_##type = { \
         DRM_FORMAT_##type, bpp, \
         (0xFF >> (8-rbits)) << rsh, (0xFF >> (8-gbits)) << gsh, \
         (0xFF >> (8-bbits)) << bsh, (0xFF >> (8-abits)) << ash, \
@@ -30,7 +30,7 @@ MAKE_RGBA(XBGR1555, 16, 5, 5, 5, 0,  0,  5, 10,  0);
  * have in this macro. 
  **/
 #define MAKE_YUV(type, bpp, hf) \
-    drm_color_def KMSDRM_COLOR_##type = { \
+    static const drm_color_def KMSDRM_COLOR_##type = { \
        DRM_FORMAT_##type, bpp, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, hf \
     };
 
