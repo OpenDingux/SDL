@@ -6,8 +6,8 @@
 #define MAKE_RGBA(type, bpp, rbits, gbits, bbits, abits, rsh, gsh, bsh, ash) \
     static const drm_color_def KMSDRM_COLOR_##type = { \
         DRM_FORMAT_##type, bpp, \
-        (0xFF >> (8-rbits)) << rsh, (0xFF >> (8-gbits)) << gsh, \
-        (0xFF >> (8-bbits)) << bsh, (0xFF >> (8-abits)) << ash, \
+        (0x3FF >> (10-rbits)) << rsh, (0x3FF >> (10-gbits)) << gsh, \
+        (0x3FF >> (10-bbits)) << bsh, (0x3FF >> (10-abits)) << ash, \
         rbits, gbits, bbits, abits, rsh, gsh, bsh, ash, 1 \
     }
 
@@ -38,7 +38,7 @@ MAKE_RGBA(XBGR1555, 16, 5, 5, 5, 0,  0,  5, 10,  0);
 MAKE_YUV(YUV444, 8, 3);
 
 /* Provides information on how to configure color format. */
-drm_color_def *get_drm_color_def(int depth, Uint32 flags)
+const drm_color_def *get_drm_color_def(int depth, Uint32 flags)
 {
     if (flags & SDL_YUV444) {
         switch(depth) {
