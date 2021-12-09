@@ -616,9 +616,9 @@ setvidmode_fail_req:
 	drmModeDestroyPropertyBlob(drm_fd, drm_mode_blob_id);
 	drm_mode_blob_id = -1;
 setvidmode_fail_fbs:
-	KMSDRM_ClearShadowbuffer(this);
 	KMSDRM_ClearFramebuffers(this);
 setvidmode_fail:
+	KMSDRM_ClearShadowbuffer(this);
 	SDL_Unlock_EventThread();
 
 	if (!(flags & SDL_YUV444) && bpp == 8) {
