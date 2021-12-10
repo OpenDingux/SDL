@@ -207,6 +207,7 @@ int KMSDRM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 	drm_mode_blob_id = -1;
 	for (int i = 0; i < sizeof(drm_buffers) / sizeof(drm_buffers[0]); i++) {
 		drm_buffers[i].map = (void*)-1;
+		drm_buffers[i].req_create.handle = -1;
 	}
 
 	if (drmModeCreatePropertyBlob(drm_fd, drm_palette,
@@ -299,6 +300,7 @@ createfb_fail_rmfb:
 	drmModeRmFB(drm_fd, drm_buffers[idx].buf_id);
 createfb_fail_ddumb:
 	drmIoctl(drm_fd, DRM_IOCTL_MODE_DESTROY_DUMB, req_destroy_dumb);
+	drm_buffers[idx].req_create.handle = -1;
 	drm_buffers[idx].req_create.pitch = 0;
 	return 0;
 }
@@ -311,6 +313,7 @@ static void KMSDRM_ClearFramebuffers(_THIS)
 			drmModeRmFB(drm_fd, drm_buffers[i].buf_id);
 			drmIoctl(drm_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &drm_buffers[i].req_destroy_dumb);
 			drm_buffers[i].map = (void*)-1;
+			drm_buffers[i].req_create.handle = -1;
 		}
 	}
 }
