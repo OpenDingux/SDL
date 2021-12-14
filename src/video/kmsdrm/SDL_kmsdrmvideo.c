@@ -5,6 +5,7 @@
  * KMS/DRM video backend code for SDL1
  */
 
+#define _FILE_OFFSET_BITS 64
 #include "SDL_config.h"
 
 #include <stdio.h>
@@ -289,6 +290,7 @@ static int KMSDRM_CreateFramebuffer(_THIS, int idx, Uint32 width, Uint32 height,
 
 	// Map the framebuffer
 	drm_buffers[idx].map = mmap(0, req_create->size, PROT_READ | PROT_WRITE, MAP_SHARED, drm_fd, req_map->offset);
+	kmsdrm_dbg_printf("req_map->offset: 0x%016llX, map: %p\n", req_map->offset, drm_buffers[idx].map);
 	if ( drm_map == MAP_FAILED ) {
 		SDL_SetError("Failed to map framebuffer, %s.\n", strerror(errno));
 		goto createfb_fail_rmfb;
